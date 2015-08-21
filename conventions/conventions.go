@@ -1,4 +1,8 @@
-package apiplexy
+package conventions
+
+import (
+	"net/http"
+)
 
 // If your plugin returns an AbortRequest as its error value, the API request
 // will be aborted and the error message routed through to the client. Use this
@@ -12,25 +16,27 @@ type AbortRequest struct {
 	Message string
 }
 
-func (e *AbortRequest) Error() {
+func (e *AbortRequest) Error() string {
 	return e.Message
 }
 
 type User struct {
-	ID      string                 `json:"id"`
-	Email   string                 `json:"email"`
-	Name    string                 `json:"name"`
-	Admin   bool                   `json:"-"`
-	Active  bool                   `json:"-"`
-	Profile map[string]interface{} `json:"profile,omitempty"`
+	ID       string                 `json:"id"`
+	Email    string                 `json:"email"`
+	Name     string                 `json:"name"`
+	Password []byte                 `json:"-"`
+	Admin    bool                   `json:"-"`
+	Active   bool                   `json:"-"`
+	Profile  map[string]interface{} `json:"profile,omitempty"`
 }
 
 // A Key has a unique ID, a user-defined Type (like "HMAC"), an assigned Quota
 // and can have extra data (such as secret signing keys) attached for validation.
 type Key struct {
-	ID   string                 `json:"id"`
-	Type string                 `json:"type"`
-	Data map[string]interface{} `json:"data,omitempty"`
+	ID    string                 `json:"id"`
+	Realm string                 `json:"realm"`
+	Type  string                 `json:"type"`
+	Data  map[string]interface{} `json:"data,omitempty"`
 }
 
 // An APIContext map accompanies every API request through its lifecycle. Use this
@@ -43,6 +49,12 @@ type Key struct {
 //  key     Key  The validated key (if not a keyless request).
 //  keyless bool Whether this request is keyless.
 type APIContext map[string]interface{}
+
+// Description of a key type that an AuthPlugin may offer.
+type KeyType struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
 
 // An AuthPlugin takes responsibility for one or several authentication methods
 // that an API request may use. You might have an auth plugin for HMAC, one
@@ -60,16 +72,26 @@ type APIContext map[string]interface{}
 // would verify the key by checking the request signature against the secret key
 // retrieved from the backend.
 type AuthPlugin interface {
+	AvailableTypes() []KeyType
+	Generate(keyType string) (key Key, err error)
 	Detect(req *http.Request, ctx *APIContext) (maybeKey string, keyType string, err error)
 	Validate(key *Key, req *http.Request, ctx *APIContext) (isValid bool, err error)
 }
 
 type BackendPlugin interface {
-	GetKey(keyID string, keyType string) (key Key, err error)
+	GetKey(keyID string, keyType string) (*Key, error)
 }
 
 type ManagementBackendPlugin interface {
 	BackendPlugin
+	CreateUser(email string, name string, password string, profile map[string]interface{}) (*User, error)
+	ActivateUser(userID string) (*User, error)
+	ResetPassword(userID string) (string, error)
+	UpdateProfile(userID string, name string, profile map[string]interface{}) (*User, error)
+	Authenticate(email string, password string) *User
+	AddKey(userID string, key *Key) error
+	DeleteKey(userID string, keyID string) error
+	GetAllKeys(userID string)
 }
 
 // A plugin that runs immediately after authentication (so the request is valid

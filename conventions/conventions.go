@@ -21,13 +21,12 @@ func (e *AbortRequest) Error() string {
 }
 
 type User struct {
-	ID       string                 `json:"id"`
-	Email    string                 `json:"email"`
-	Name     string                 `json:"name"`
-	Password []byte                 `json:"-"`
-	Admin    bool                   `json:"-"`
-	Active   bool                   `json:"-"`
-	Profile  map[string]interface{} `json:"profile,omitempty"`
+	ID      string                 `json:"id"`
+	Email   string                 `json:"email"`
+	Name    string                 `json:"name"`
+	Admin   bool                   `json:"-"`
+	Active  bool                   `json:"-"`
+	Profile map[string]interface{} `json:"profile,omitempty"`
 }
 
 // A Key has a unique ID, a user-defined Type (like "HMAC"), an assigned Quota

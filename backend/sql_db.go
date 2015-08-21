@@ -1,15 +1,17 @@
 package backend
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/12foo/apiplexy/conventions"
+	c "github.com/12foo/apiplexy/conventions"
 	"github.com/12foo/apiplexy/helpers"
 	_ "github.com/denisenkom/go-mssqldb"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/jinzhu/gorm"
 	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
+	"golang.org/x/crypto/bcrypt"
 	"time"
 )
 
@@ -23,34 +25,91 @@ var defaults = map[string]interface{}{
 	"ssl":      "",
 }
 
-type dbKey struct {
-	conventions.Key
-	UserID    string
+type sqlDBKey struct {
+	ID        string
+	Realm     string
+	Type      string
+	Data      string
 	CreatedAt time.Time
 	DeletedAt *time.Time
 }
 
-type dbUser struct {
-	conventions.User
+func (u *sqlDBKey) toKey() *c.Key {
+	ck := c.Key{
+		ID:    u.ID,
+		Realm: u.Realm,
+		Type:  u.Type,
+	}
+	json.Unmarshal([]byte(u.Data), &ck.Data)
+	return &ck
+}
+
+type sqlDBUser struct {
+	ID        string
+	Email     string
+	Name      string
+	Password  []byte
+	Admin     bool
+	Active    bool
+	Profile   []byte
 	CreatedAt time.Time
 	DeletedAt *time.Time
+	LastLogin *time.Time
+}
+
+func (u *sqlDBUser) toUser() *c.User {
+	cu := c.User{
+		ID:     u.ID,
+		Email:  u.Email,
+		Name:   u.Name,
+		Admin:  u.Admin,
+		Active: u.Active,
+	}
+	json.Unmarshal(u.Profile, &cu.Profile)
+	return &cu
 }
 
 type sqlDBBackend struct {
 	db *gorm.DB
 }
 
-func (sql *sqlDBBackend) GetKey(keyId string, keyType string) (*conventions.Key, error) {
-	k := &dbKey{}
+func (sql *sqlDBBackend) GetKey(keyId string, keyType string) (*c.Key, error) {
+	k := sqlDBKey{}
 	if sql.db.First(&k, keyId).RecordNotFound() {
 		return nil, nil
 	}
-	return &k.Key, nil
+	return k.toKey(), nil
 }
 
-func (sql *sqlDBBackend) StoreKey(userID string, key *conventions.Key) error {
-	return nil
+func (sql *sqlDBBackend) CreateUser(email string, name string, password string, profile map[string]interface{}) (*c.User, error) {
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, err
+	}
+	bprofile, err := json.Marshal(profile)
+	if err != nil {
+		return nil, err
+	}
+
+	u := sqlDBUser{
+		Email:    email,
+		Name:     name,
+		Password: hash,
+		Profile:  bprofile,
+	}
+	if err := sql.db.Create(&u).Error; err != nil {
+		return nil, err
+	}
+	return u.toUser(), nil
 }
+
+func ActivateUser(userID string) (*c.User, error)
+func ResetPassword(userID string) (string, error)
+func UpdateProfile(userID string, name string, profile map[string]interface{}) (*c.User, error)
+func Authenticate(email string, password string) *c.User
+func AddKey(userID string, key *c.Key) error
+func DeleteKey(userID string, keyID string) error
+func GetAllKeys(userID string)
 
 // NewSQLDBBackend creates a backend plugin for popular SQL databases. It has the following
 // configuration options (read from your config JSON):

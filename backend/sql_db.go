@@ -2,7 +2,6 @@ package backend
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	c "github.com/12foo/apiplexy/conventions"
 	"github.com/12foo/apiplexy/helpers"
@@ -30,31 +29,40 @@ type sqlDBKey struct {
 	Realm     string
 	Type      string
 	Data      string
+	UserID    string `sql:"not null;index"`
 	CreatedAt time.Time
 	DeletedAt *time.Time
 }
 
-func (u *sqlDBKey) toKey() *c.Key {
+func (k *sqlDBKey) toKey() *c.Key {
 	ck := c.Key{
-		ID:    u.ID,
-		Realm: u.Realm,
-		Type:  u.Type,
+		ID:    k.ID,
+		Realm: k.Realm,
+		Type:  k.Type,
 	}
-	json.Unmarshal([]byte(u.Data), &ck.Data)
+	json.Unmarshal([]byte(k.Data), &ck.Data)
 	return &ck
+}
+
+func (k *sqlDBKey) TableName() string {
+	return "api_keys"
 }
 
 type sqlDBUser struct {
 	ID        string
-	Email     string
+	Email     string `sql:"type:varchar(100);not null;unique_index"`
 	Name      string
-	Password  []byte
+	Password  []byte `sql:"not null"`
 	Admin     bool
 	Active    bool
-	Profile   []byte
+	Profile   string
 	CreatedAt time.Time
 	DeletedAt *time.Time
 	LastLogin *time.Time
+}
+
+func (u *sqlDBUser) TableName() string {
+	return "api_users"
 }
 
 func (u *sqlDBUser) toUser() *c.User {
@@ -65,15 +73,15 @@ func (u *sqlDBUser) toUser() *c.User {
 		Admin:  u.Admin,
 		Active: u.Active,
 	}
-	json.Unmarshal(u.Profile, &cu.Profile)
+	json.Unmarshal([]byte(u.Profile), &cu.Profile)
 	return &cu
 }
 
-type sqlDBBackend struct {
+type SQLDBBackend struct {
 	db *gorm.DB
 }
 
-func (sql *sqlDBBackend) GetKey(keyId string, keyType string) (*c.Key, error) {
+func (sql *SQLDBBackend) GetKey(keyId string, keyType string) (*c.Key, error) {
 	k := sqlDBKey{}
 	if sql.db.First(&k, keyId).RecordNotFound() {
 		return nil, nil
@@ -81,7 +89,7 @@ func (sql *sqlDBBackend) GetKey(keyId string, keyType string) (*c.Key, error) {
 	return k.toKey(), nil
 }
 
-func (sql *sqlDBBackend) CreateUser(email string, name string, password string, profile map[string]interface{}) (*c.User, error) {
+func (sql *SQLDBBackend) CreateUser(email string, name string, password string, profile map[string]interface{}) (*c.User, error) {
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, err
@@ -95,7 +103,7 @@ func (sql *sqlDBBackend) CreateUser(email string, name string, password string, 
 		Email:    email,
 		Name:     name,
 		Password: hash,
-		Profile:  bprofile,
+		Profile:  string(bprofile[:]),
 	}
 	if err := sql.db.Create(&u).Error; err != nil {
 		return nil, err
@@ -103,16 +111,91 @@ func (sql *sqlDBBackend) CreateUser(email string, name string, password string, 
 	return u.toUser(), nil
 }
 
-func ActivateUser(userID string) (*c.User, error)
-func ResetPassword(userID string) (string, error)
-func UpdateProfile(userID string, name string, profile map[string]interface{}) (*c.User, error)
-func Authenticate(email string, password string) *c.User
-func AddKey(userID string, key *c.Key) error
-func DeleteKey(userID string, keyID string) error
-func GetAllKeys(userID string)
+func (sql *SQLDBBackend) ActivateUser(userID string) (*c.User, error) {
+	u := sqlDBUser{}
+	if sql.db.First(&u, userID).RecordNotFound() {
+		return nil, fmt.Errorf("User not found.")
+	}
+	u.Active = true
+	sql.db.Save(&u)
+	return u.toUser(), nil
+}
+
+func (sql *SQLDBBackend) ResetPassword(userID string, newPassword string) error {
+	u := sqlDBUser{}
+	if sql.db.First(&u, userID).RecordNotFound() {
+		return fmt.Errorf("User not found.")
+	}
+	hash, _ := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	u.Password = hash
+	sql.db.Save(&u)
+	return nil
+}
+
+func (sql *SQLDBBackend) UpdateProfile(userID string, name string, profile map[string]interface{}) (*c.User, error) {
+	u := sqlDBUser{}
+	if sql.db.First(&u, userID).RecordNotFound() {
+		return nil, fmt.Errorf("User not found.")
+	}
+	u.Name = name
+	bp, _ := json.Marshal(profile)
+	u.Profile = string(bp[:])
+	sql.db.Save(&u)
+	return u.toUser(), nil
+}
+
+func (sql *SQLDBBackend) Authenticate(email string, password string) *c.User {
+	u := sqlDBUser{}
+	if sql.db.Where(&sqlDBUser{Email: email}).First(&u).RecordNotFound() {
+		return nil
+	}
+	if bcrypt.CompareHashAndPassword(u.Password, []byte(password)) != nil {
+		return nil
+	}
+	return u.toUser()
+}
+
+func (sql *SQLDBBackend) AddKey(userID string, keyType string, realm string, data map[string]interface{}) (*c.Key, error) {
+	u := sqlDBUser{}
+	if sql.db.First(&u, userID).RecordNotFound() {
+		return nil, fmt.Errorf("User not found.")
+	}
+	bd, _ := json.Marshal(data)
+	k := sqlDBKey{
+		Realm: realm,
+		Type:  keyType,
+		Data:  string(bd[:]),
+	}
+	sql.db.Save(&k)
+	return k.toKey(), nil
+}
+
+func (sql *SQLDBBackend) DeleteKey(userID string, keyID string) error {
+	k := sqlDBKey{}
+	if sql.db.First(&k, keyID).RecordNotFound() {
+		return fmt.Errorf("Key does not exist.")
+	}
+	if k.UserID != userID {
+		return fmt.Errorf("You are not the owner of this key.")
+	}
+	sql.db.Delete(&k)
+	return nil
+}
+
+func (sql *SQLDBBackend) GetAllKeys(userID string) ([]*c.Key, error) {
+	ks := []sqlDBKey{}
+	if sql.db.Find(&ks, sqlDBKey{UserID: userID}).Error != nil {
+		return nil, nil
+	}
+	cks := make([]*c.Key, len(ks))
+	for i, k := range ks {
+		cks[i] = k.toKey()
+	}
+	return cks, nil
+}
 
 // NewSQLDBBackend creates a backend plugin for popular SQL databases. It has the following
-// configuration options (read from your config JSON):
+// configuration options (read from your config):
 //
 //  driver: one of "mysql", "postgres", "mssql", "sqlite3"
 //  host: "localhost"
@@ -131,8 +214,8 @@ func NewSQLDBBackend(config map[string]interface{}) (interface{}, error) {
 	}
 	driverName := config["driver"]
 	if driverName != "mysql" && driverName != "postgres" && driverName != "mssql" && driverName == "sqlite3" {
-		return nil, errors.New(fmt.Sprintf("'%s' is not a valid driver for a SQL DB.", driverName))
+		return nil, fmt.Errorf("'%s' is not a valid driver for a SQL DB.", driverName)
 	}
 
-	return &sqlDBBackend{}, nil
+	return &SQLDBBackend{}, nil
 }

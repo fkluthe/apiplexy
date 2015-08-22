@@ -85,10 +85,10 @@ type ManagementBackendPlugin interface {
 	BackendPlugin
 	CreateUser(email string, name string, password string, profile map[string]interface{}) (*User, error)
 	ActivateUser(userID string) (*User, error)
-	ResetPassword(userID string) (string, error)
+	ResetPassword(userID string, newPassword string) error
 	UpdateProfile(userID string, name string, profile map[string]interface{}) (*User, error)
 	Authenticate(email string, password string) *User
-	AddKey(userID string, key *Key) error
+	AddKey(userID string, keyType string, realm string, data map[string]interface{}) error
 	DeleteKey(userID string, keyID string) error
 	GetAllKeys(userID string)
 }

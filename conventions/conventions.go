@@ -32,6 +32,8 @@ type ApiplexConfig struct {
 		DB   int
 	}
 	Serve struct {
+		APIPath        string
+		Upstream       []string
 		PortalAPI      bool
 		PortalFrontend bool
 	}
@@ -79,6 +81,18 @@ type KeyType struct {
 	Description string `json:"description"`
 }
 
+type PluginSpec struct {
+	Name        string
+	Description string
+	Config      struct {
+		Name        string
+		Default     interface{}
+		Description string
+	}
+}
+
+type ApiplexPlugin interface{}
+
 // An AuthPlugin takes responsibility for one or several authentication methods
 // that an API request may use. You might have an auth plugin for HMAC, one
 // for OAuth2, and so on.
@@ -95,13 +109,15 @@ type KeyType struct {
 // would verify the key by checking the request signature against the secret key
 // retrieved from the backend.
 type AuthPlugin interface {
+	ApiplexPlugin
 	AvailableTypes() []KeyType
 	Generate(keyType string) (key Key, err error)
-	Detect(req *http.Request, ctx *APIContext) (maybeKey string, keyType string, err error)
-	Validate(key *Key, req *http.Request, ctx *APIContext) (isValid bool, err error)
+	Detect(req *http.Request, ctx APIContext) (maybeKey string, keyType string, bits APIContext, err error)
+	Validate(key *Key, req *http.Request, ctx APIContext, authCtx APIContext) (isValid bool, err error)
 }
 
 type BackendPlugin interface {
+	ApiplexPlugin
 	GetKey(keyID string, keyType string) (*Key, error)
 }
 
@@ -124,13 +140,16 @@ type ManagementBackendPlugin interface {
 //
 //  ctx["cost"] = 3
 type PostAuthPlugin interface {
+	ApiplexPlugin
 	PostAuth(req *http.Request, ctx *APIContext) error
 }
 
 type PreUpstreamPlugin interface {
+	ApiplexPlugin
 	PreUpstream(req *http.Request, ctx *APIContext) error
 }
 
 type PostUpstreamPlugin interface {
+	ApiplexPlugin
 	PostUpstream(req *http.Request, res *http.Response, ctx *APIContext) error
 }

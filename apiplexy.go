@@ -15,6 +15,7 @@ var pluginMapping = map[string]func(config map[string]interface{}) (interface{},
 }
 
 type apiplex struct {
+	transports   []http.Transport
 	auth         []c.AuthPlugin
 	backends     []c.BackendPlugin
 	usermgmt     c.ManagementBackendPlugin
@@ -28,7 +29,7 @@ func (ap *apiplex) Process(req *http.Request, res *http.ResponseWriter) error {
 	ctx["cost"] = 1
 
 	for _, auth := range ap.auth {
-		maybeKey, keyType, err := auth.Detect(req, &ctx)
+		maybeKey, keyType, bits, err := auth.Detect(req, ctx)
 		if err != nil {
 			return err
 		}
@@ -38,7 +39,7 @@ func (ap *apiplex) Process(req *http.Request, res *http.ResponseWriter) error {
 				if err != nil {
 					return err
 				}
-				ok, err := auth.Validate(key, req, &ctx)
+				ok, err := auth.Validate(key, req, ctx, bits)
 				if err != nil {
 					return err
 				}
@@ -166,6 +167,8 @@ func NewApiplex(config c.ApiplexConfig) (*apiplex, error) {
 		cp := p.(c.PostUpstreamPlugin)
 		ap.postupstream[i] = cp
 	}
+
+	// TODO set up multiple reusable backend connections (http.Client?)
 
 	return &apiplex{}, nil
 }

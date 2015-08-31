@@ -141,15 +141,15 @@ type ManagementBackendPlugin interface {
 //  ctx["cost"] = 3
 type PostAuthPlugin interface {
 	ApiplexPlugin
-	PostAuth(req *http.Request, ctx *APIContext) error
+	PostAuth(req *http.Request, ctx APIContext) error
 }
 
 type PreUpstreamPlugin interface {
 	ApiplexPlugin
-	PreUpstream(req *http.Request, ctx *APIContext) error
+	PreUpstream(req *http.Request, ctx APIContext) error
 }
 
 type PostUpstreamPlugin interface {
 	ApiplexPlugin
-	PostUpstream(req *http.Request, res *http.Response, ctx *APIContext) error
+	PostUpstream(req *http.Request, res *http.Response, ctx APIContext) error
 }

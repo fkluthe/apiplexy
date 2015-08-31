@@ -51,13 +51,13 @@ func (ap *apiplex) Process(req *http.Request, res *http.ResponseWriter) error {
 	}
 
 	for _, postauth := range ap.postauth {
-		if err := postauth.PostAuth(req, &ctx); err != nil {
+		if err := postauth.PostAuth(req, ctx); err != nil {
 			return err
 		}
 	}
 
 	for _, preupstream := range ap.preupstream {
-		if err := preupstream.PreUpstream(req, &ctx); err != nil {
+		if err := preupstream.PreUpstream(req, ctx); err != nil {
 			return err
 		}
 	}
@@ -66,7 +66,7 @@ func (ap *apiplex) Process(req *http.Request, res *http.ResponseWriter) error {
 	var urs *http.Response
 
 	for _, postupstream := range ap.postupstream {
-		if err := postupstream.PostUpstream(req, urs, &ctx); err != nil {
+		if err := postupstream.PostUpstream(req, urs, ctx); err != nil {
 			return err
 		}
 	}

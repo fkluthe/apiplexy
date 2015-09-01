@@ -4,36 +4,73 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
 
 	c "github.com/12foo/apiplexy/conventions"
-	"github.com/oschwald/geoip2-golang"
+	h "github.com/12foo/apiplexy/helpers"
+	g "github.com/oschwald/geoip2-golang"
 )
+
+var defaults = map[string]interface{}{
+	"pathToMmdbFile": "",
+	"ipcaching":      true,
+}
 
 //IPLocatorPlugin ..
 type IPLocatorPlugin struct {
-	ipCache map[string]string
+	pathToMmdbFile string                 //Path to the GeoIP2 File-Database
+	ipCache        map[string]interface{} //Caching of Locations to avoid slow fs access
+}
+
+//NewIPLocatorPlugin ..
+func NewIPLocatorPlugin(config map[string]interface{}) (interface{}, error) {
+	if err := h.EnsureDefaults(config, defaults); err != nil {
+		return nil, err
+	}
+	path := config["pathToMmdbFile"]
+	if strings.HasSuffix(path.(string), ".mmdb") {
+		return nil, fmt.Errorf("'%s' is not a valid geo database", path)
+	}
+	return &IPLocatorPlugin{}, nil
 }
 
 //PostUpstream ..
-func (l *IPLocatorPlugin) PostUpstream(req *http.Request, res *http.Response, ctx *c.APIContext) error {
+func (l *IPLocatorPlugin) PostUpstream(req *http.Request, res *http.Response, ctx c.APIContext) error {
+
+	initLog(ctx)
 	ip, _, _ := net.SplitHostPort(req.RemoteAddr)
 
 	if val, ok := l.ipCache[ip]; ok {
+		//Retrive Location from ipCache
+		mp, _ := ctx["log"].(map[string]interface{})
+		mp["location"] = val
+
 	} else {
-		db, err := geoip2.Open("/home/terkel/Downloads/GeoLite2-City.mmdb")
+		//Retrive Location from File-Database
+		db, err := g.Open(l.pathToMmdbFile)
 		if err != nil {
-			fmt.Errorf("File database not found")
+			return fmt.Errorf("GeoLite database not found")
 		}
 		defer db.Close()
-		// If you are using strings that may be invalid, check that ip is not nil
+
 		netIP := net.ParseIP(ip)
 		record, err := db.City(netIP)
 		if err != nil {
-			fmt.Errorf("No record found for IP:" + ip)
+			return fmt.Errorf("No record for IP:" + ip)
 		}
-		fmt.Printf("Coordinates: %v, %v\n", record.Location.Latitude, record.Location.Longitude)
 
+		mp, _ := ctx["log"].(map[string]interface{})
+		mp["Location"] = record.Location //Latitude, Longitude..
+		l.ipCache[ip] = record.Location  //Put Loction into ipCache
 	}
 
 	return nil
+}
+
+func initLog(ctx c.APIContext) {
+	if _, ok := ctx["log"]; ok {
+		//ctx["log"] is available
+	} else {
+		ctx["log"] = make(map[string]interface{})
+	}
 }

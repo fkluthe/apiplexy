@@ -2,20 +2,24 @@ package apiplexy
 
 import (
 	"fmt"
-	"github.com/12foo/apiplexy/backend"
 	c "github.com/12foo/apiplexy/conventions"
 	log "github.com/Sirupsen/logrus"
+	"math/rand"
 	"net/http"
 	"reflect"
 )
 
 // Default (built-in) plugins.
-var pluginMapping = map[string]func(config map[string]interface{}) (interface{}, error){
-	"sql_backend": backend.NewSQLDBBackend,
+var pluginMapping = map[string]func(config map[string]interface{}) (interface{}, error){}
+
+type upstream struct {
+	client  *http.Client
+	address string
 }
 
 type apiplex struct {
-	transports   []http.Transport
+	upstreams    []upstream
+	apipath      string
 	auth         []c.AuthPlugin
 	backends     []c.BackendPlugin
 	usermgmt     c.ManagementBackendPlugin
@@ -24,7 +28,7 @@ type apiplex struct {
 	postupstream []c.PostUpstreamPlugin
 }
 
-func (ap *apiplex) Process(req *http.Request, res *http.ResponseWriter) error {
+func (ap *apiplex) Process(res http.ResponseWriter, req *http.Request) error {
 	ctx := c.APIContext{}
 	ctx["cost"] = 1
 
@@ -62,8 +66,11 @@ func (ap *apiplex) Process(req *http.Request, res *http.ResponseWriter) error {
 		}
 	}
 
-	// TODO send upstream
-	var urs *http.Response
+	upstream := ap.upstreams[rand.Intn(len(ap.upstreams))]
+	urs, err := upstream.client.Do(req)
+	if err != nil {
+		return err
+	}
 
 	for _, postupstream := range ap.postupstream {
 		if err := postupstream.PostUpstream(req, urs, ctx); err != nil {
@@ -168,7 +175,14 @@ func NewApiplex(config c.ApiplexConfig) (*apiplex, error) {
 		ap.postupstream[i] = cp
 	}
 
-	// TODO set up multiple reusable backend connections (http.Client?)
+	// upstreams
+	ap.upstreams = make([]upstream, len(config.Serve.Upstream))
+	for i, us := range config.Serve.Upstream {
+		ap.upstreams[i] = upstream{
+			client:  &http.Client{},
+			address: us,
+		}
+	}
 
 	return &apiplex{}, nil
 }

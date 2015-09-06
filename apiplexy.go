@@ -1,12 +1,15 @@
 package apiplexy
 
 import (
+	"bytes"
 	"fmt"
-	c "github.com/12foo/apiplexy/conventions"
-	log "github.com/Sirupsen/logrus"
+	"io/ioutil"
 	"math/rand"
 	"net/http"
 	"reflect"
+
+	c "github.com/12foo/apiplexy/conventions"
+	log "github.com/Sirupsen/logrus"
 )
 
 // Default (built-in) plugins.
@@ -71,6 +74,12 @@ func (ap *apiplex) Process(res http.ResponseWriter, req *http.Request) error {
 	if err != nil {
 		return err
 	}
+	b, err := ioutil.ReadAll(urs.Body)
+	if err != nil {
+		return err
+	}
+	urs.Body.Close()
+	urs.Body = ioutil.NopCloser(bytes.NewReader(b))
 
 	for _, postupstream := range ap.postupstream {
 		if err := postupstream.PostUpstream(req, urs, ctx); err != nil {

@@ -11,7 +11,7 @@ import (
 	g "github.com/oschwald/geoip2-golang"
 )
 
-var defaults = map[string]interface{}{
+var iplocatorDefaults = map[string]interface{}{
 	"pathToMmdbFile": "",
 	"ipcaching":      true,
 }
@@ -24,20 +24,25 @@ type IPLocatorPlugin struct {
 
 //NewIPLocatorPlugin ..
 func NewIPLocatorPlugin(config map[string]interface{}) (interface{}, error) {
-	if err := h.EnsureDefaults(config, defaults); err != nil {
+	if err := h.EnsureDefaults(config, iplocatorDefaults); err != nil {
 		return nil, err
 	}
+
 	path := config["pathToMmdbFile"]
 	if strings.HasSuffix(path.(string), ".mmdb") {
 		return nil, fmt.Errorf("'%s' is not a valid geo database", path)
 	}
-	return &IPLocatorPlugin{}, nil
+	p := IPLocatorPlugin{pathToMmdbFile: path.(string)}
+	if config["ipcaching"].(bool) {
+		p.ipCache = make(map[string]interface{})
+	}
+
+	return p, nil
 }
 
 //PostUpstream ..
 func (l *IPLocatorPlugin) PostUpstream(req *http.Request, res *http.Response, ctx c.APIContext) error {
 
-	initLog(ctx)
 	ip, _, _ := net.SplitHostPort(req.RemoteAddr)
 
 	if val, ok := l.ipCache[ip]; ok {
@@ -65,12 +70,4 @@ func (l *IPLocatorPlugin) PostUpstream(req *http.Request, res *http.Response, ct
 	}
 
 	return nil
-}
-
-func initLog(ctx c.APIContext) {
-	if _, ok := ctx["log"]; ok {
-		//ctx["log"] is available
-	} else {
-		ctx["log"] = make(map[string]interface{})
-	}
 }

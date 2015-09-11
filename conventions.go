@@ -1,4 +1,4 @@
-package conventions
+package apiplexy
 
 import (
 	"net/http"
@@ -81,17 +81,12 @@ type KeyType struct {
 	Description string `json:"description"`
 }
 
-type PluginSpec struct {
-	Name        string
-	Description string
-	Config      struct {
-		Name        string
-		Default     interface{}
-		Description string
-	}
+type ApiplexPlugin interface {
+	Configure(config map[string]interface{}) error
+	Name() string
+	Description() string
+	DefaultConfig() map[string]interface{}
 }
-
-type ApiplexPlugin interface{}
 
 // An AuthPlugin takes responsibility for one or several authentication methods
 // that an API request may use. You might have an auth plugin for HMAC, one

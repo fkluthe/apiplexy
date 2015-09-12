@@ -1,4 +1,4 @@
-package backend
+package sql
 
 import (
 	"encoding/json"
@@ -188,18 +188,18 @@ func (sql *SQLDBBackend) Name() string {
 }
 
 func (sql *SQLDBBackend) Description() string {
-	return "Backend that connects to the most popular SQL databases. Supports full user/key management."
+	return "Use popular SQL databases as backend stores (full user/key management)."
 }
 
 func (sql *SQLDBBackend) DefaultConfig() map[string]interface{} {
 	return map[string]interface{}{
-		"driver":   "",
-		"host":     "",
-		"port":     0,
-		"database": "",
-		"user":     "",
-		"password": "",
-		"ssl":      "",
+		"driver":   "mysql/postgres/mssql/sqlite3",
+		"host":     "localhost",
+		"port":     5432,
+		"database": "apiplexy-db",
+		"user":     "apiplexy-user",
+		"password": "my-secret-password",
+		"ssl":      true,
 	}
 }
 

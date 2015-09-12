@@ -38,8 +38,8 @@ type apiplexConfigServe struct {
 	Port      int
 	API       string
 	Upstreams []string
-	PortalAPI string
-	Portal    string
+	PortalAPI string `yaml:"portal_api"`
+	Portal    string `yaml:"portal"`
 }
 
 type apiplexConfigPlugins struct {
@@ -50,8 +50,15 @@ type apiplexConfigPlugins struct {
 	PostUpstream []apiplexPluginConfig `yaml:",omitempty" json:",omitempty"`
 }
 
+type apiplexQuota struct {
+	Minutes int
+	MaxIP   int `yaml:"max_ip,omitempty"`
+	MaxKey  int `yaml:"max_key,omitempty"`
+}
+
 type ApiplexConfig struct {
 	Redis   apiplexConfigRedis
+	Quotas  map[string]apiplexQuota
 	Serve   apiplexConfigServe
 	Plugins apiplexConfigPlugins
 }

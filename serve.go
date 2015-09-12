@@ -3,6 +3,7 @@ package apiplexy
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/garyburd/redigo/redis"
 	"io/ioutil"
 	"math/rand"
 	"net"
@@ -42,34 +43,78 @@ func (ap *apiplex) error(status int, err error, res http.ResponseWriter) {
 	}
 }
 
+func (ap *apiplex) authenticateRequest(req *http.Request, rd redis.Conn, ctx APIContext) error {
+	for _, auth := range ap.auth {
+		maybeKey, keyType, bits, err := auth.Detect(req, ctx)
+		if err != nil {
+			return err
+		}
+
+		// we've found a key (probably)
+		if maybeKey != "" {
+			// quick auth: is key in redis?
+			kjson, _ := redis.String(rd.Do("GET", "auth_cache:"+maybeKey))
+			if kjson != "" {
+				// yes-- proceed immediately
+				key := Key{}
+				json.Unmarshal([]byte(kjson), &key)
+				ok, err := auth.Validate(&key, req, ctx, bits)
+				if err != nil {
+					return err
+				}
+				if ok {
+					ctx["key"] = &key
+				} else {
+					return Abort(403, "Your request could not be authenticated.")
+				}
+			} else {
+				// no-- try the backends
+				for _, bend := range ap.backends {
+					key, err := bend.GetKey(maybeKey, keyType)
+					if err != nil {
+						return err
+					}
+					ok, err := auth.Validate(key, req, ctx, bits)
+					if err != nil {
+						return err
+					}
+					if ok {
+						kjson, _ := json.Marshal(&key)
+						rd.Do("SETEX", "auth_cache:"+maybeKey, ap.authCacheMins*60, string(kjson))
+						ctx["key"] = key
+						break
+					} else {
+						return Abort(403, "Your request could not be authenticated.")
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// checks a single quota (e.g. per_ip or per_key).
+func (ap *apiplex) singleQuota(rd redis.Conn, key string, cost, max, minutes int) bool {
+	// TODO write!
+	return true
+}
+
+// checks a request's quota by its context.
+func (ap *apiplex) checkQuota(rd redis.Conn, ctx APIContext) error {
+	// TODO write!
+	return nil
+}
+
 func (ap *apiplex) HandleAPI(res http.ResponseWriter, req *http.Request) {
 	ctx := APIContext{}
 	ctx["cost"] = 1
 	ctx["path"] = "/" + strings.TrimSuffix(strings.TrimPrefix(req.URL.Path, ap.apipath), "/")
 
-	for _, auth := range ap.auth {
-		maybeKey, keyType, bits, err := auth.Detect(req, ctx)
-		if err != nil {
-			ap.error(500, err, res)
-			return
-		}
-		if maybeKey != "" {
-			for _, bend := range ap.backends {
-				key, err := bend.GetKey(maybeKey, keyType)
-				if err != nil {
-					ap.error(500, err, res)
-					return
-				}
-				ok, err := auth.Validate(key, req, ctx, bits)
-				if err != nil {
-					ap.error(500, err, res)
-					return
-				}
-				if ok {
-					ctx["key"] = key
-				}
-			}
-		}
+	rd := ap.redis.Get()
+
+	if err := ap.authenticateRequest(req, rd, ctx); err != nil {
+		ap.error(500, err, res)
+		return
 	}
 
 	for _, postauth := range ap.postauth {
@@ -77,6 +122,11 @@ func (ap *apiplex) HandleAPI(res http.ResponseWriter, req *http.Request) {
 			ap.error(500, err, res)
 			return
 		}
+	}
+
+	if err := ap.checkQuota(rd, ctx); err != nil {
+		ap.error(500, err, res)
+		return
 	}
 
 	for _, preupstream := range ap.preupstream {

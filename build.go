@@ -2,9 +2,13 @@ package apiplexy
 
 import (
 	"fmt"
+	log "github.com/Sirupsen/logrus"
+	"github.com/garyburd/redigo/redis"
 	"net/http"
 	"net/url"
 	"reflect"
+	"strconv"
+	"time"
 )
 
 var registeredPlugins = make(map[string]ApiplexPlugin)
@@ -15,14 +19,16 @@ type upstream struct {
 }
 
 type apiplex struct {
-	upstreams    []upstream
-	apipath      string
-	auth         []AuthPlugin
-	backends     []BackendPlugin
-	usermgmt     ManagementBackendPlugin
-	postauth     []PostAuthPlugin
-	preupstream  []PreUpstreamPlugin
-	postupstream []PostUpstreamPlugin
+	upstreams     []upstream
+	apipath       string
+	authCacheMins int
+	redis         *redis.Pool
+	auth          []AuthPlugin
+	backends      []BackendPlugin
+	usermgmt      ManagementBackendPlugin
+	postauth      []PostAuthPlugin
+	preupstream   []PreUpstreamPlugin
+	postupstream  []PostUpstreamPlugin
 }
 
 func RegisterPlugin(plugin ApiplexPlugin) {
@@ -43,6 +49,17 @@ func ExampleConfiguration(pluginNames []string) (*ApiplexConfig, error) {
 			Host: "127.0.0.1",
 			Port: 6379,
 			DB:   0,
+		},
+		Quotas: map[string]apiplexQuota{
+			"default": apiplexQuota{
+				Minutes: 5,
+				MaxIP:   50,
+				MaxKey:  5000,
+			},
+			"keyless": apiplexQuota{
+				Minutes: 5,
+				MaxIP:   20,
+			},
 		},
 		Serve: apiplexConfigServe{
 			Port:      5000,
@@ -127,11 +144,16 @@ func ensureFinalSlash(s string) string {
 }
 
 func New(config ApiplexConfig) (*http.ServeMux, error) {
+	log.Infof("Initializing API proxy from configuration.")
+
+	// TODO make everything configurable
 	ap := apiplex{
-		apipath: ensureFinalSlash(config.Serve.API),
+		apipath:       ensureFinalSlash(config.Serve.API),
+		authCacheMins: 10,
 	}
 
 	// auth plugins
+	log.Debugf("Building auth plugins...")
 	auth, err := buildPlugins(config.Plugins.Auth, reflect.TypeOf((*AuthPlugin)(nil)).Elem())
 	if err != nil {
 		return nil, err
@@ -143,6 +165,7 @@ func New(config ApiplexConfig) (*http.ServeMux, error) {
 	}
 
 	// backend plugins
+	log.Debugf("Building backend plugins...")
 	backend, err := buildPlugins(config.Plugins.Backend, reflect.TypeOf((*BackendPlugin)(nil)).Elem())
 	if err != nil {
 		return nil, err
@@ -165,6 +188,7 @@ func New(config ApiplexConfig) (*http.ServeMux, error) {
 	}
 
 	// postauth plugins
+	log.Debugf("Building postauth plugins...")
 	postauth, err := buildPlugins(config.Plugins.PostAuth, reflect.TypeOf((*PostAuthPlugin)(nil)).Elem())
 	if err != nil {
 		return nil, err
@@ -176,6 +200,7 @@ func New(config ApiplexConfig) (*http.ServeMux, error) {
 	}
 
 	// preupstream plugins
+	log.Debugf("Building preupstream plugins...")
 	preupstream, err := buildPlugins(config.Plugins.PreUpstream, reflect.TypeOf((*PreUpstreamPlugin)(nil)).Elem())
 	if err != nil {
 		return nil, err
@@ -187,6 +212,7 @@ func New(config ApiplexConfig) (*http.ServeMux, error) {
 	}
 
 	// postupstream plugins
+	log.Debugf("Building postupstream plugins...")
 	postupstream, err := buildPlugins(config.Plugins.PostUpstream, reflect.TypeOf((*PostUpstreamPlugin)(nil)).Elem())
 	if err != nil {
 		return nil, err
@@ -198,6 +224,7 @@ func New(config ApiplexConfig) (*http.ServeMux, error) {
 	}
 
 	// upstreams
+	log.Debugf("Preparing upstream connections...")
 	ap.upstreams = make([]upstream, len(config.Serve.Upstreams))
 	for i, us := range config.Serve.Upstreams {
 		u, err := url.Parse(us)
@@ -208,6 +235,28 @@ func New(config ApiplexConfig) (*http.ServeMux, error) {
 			client:  &http.Client{},
 			address: u,
 		}
+	}
+
+	log.Infof("Connecting to Redis at %s:%d (DB #%d)...", config.Redis.Host, config.Redis.Port, config.Redis.DB)
+	ap.redis = &redis.Pool{
+		MaxIdle:     3,
+		IdleTimeout: 240 * time.Second,
+		Dial: func() (redis.Conn, error) {
+			c, err := redis.Dial("tcp", config.Redis.Host+":"+strconv.Itoa(config.Redis.Port))
+			if err != nil {
+				return nil, err
+			}
+			c.Do("SELECT", config.Redis.DB)
+			return c, err
+		},
+		TestOnBorrow: func(c redis.Conn, t time.Time) error {
+			_, err := c.Do("PING")
+			return err
+		},
+	}
+
+	if err != nil {
+		log.Fatalf("Couldn't connect to Redis. %s", err.Error())
 	}
 
 	mux := http.NewServeMux()

@@ -28,10 +28,18 @@ type processingError struct {
 }
 
 func (ap *apiplex) error(status int, err error, res http.ResponseWriter) {
-	// TODO analyze error and maybe report
-	res.WriteHeader(status)
-	jsonError, _ := json.Marshal(&processingError{Error: err.Error()})
-	res.Write(jsonError)
+	switch err.(type) {
+	case AbortRequest:
+		ar := err.(AbortRequest)
+		res.WriteHeader(ar.Status)
+		jsonError, _ := json.Marshal(&processingError{Error: err.Error()})
+		res.Write(jsonError)
+	default:
+		// TODO analyze error and maybe report
+		res.WriteHeader(status)
+		jsonError, _ := json.Marshal(&processingError{Error: err.Error()})
+		res.Write(jsonError)
+	}
 }
 
 func (ap *apiplex) HandleAPI(res http.ResponseWriter, req *http.Request) {

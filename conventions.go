@@ -16,8 +16,12 @@ type AbortRequest struct {
 	Message string
 }
 
-func (e *AbortRequest) Error() string {
+func (e AbortRequest) Error() string {
 	return e.Message
+}
+
+func Abort(status int, message string) AbortRequest {
+	return AbortRequest{Status: status, Message: message}
 }
 
 type apiplexPluginConfig struct {

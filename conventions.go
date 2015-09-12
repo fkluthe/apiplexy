@@ -26,7 +26,7 @@ func Abort(status int, message string) AbortRequest {
 
 type apiplexPluginConfig struct {
 	Plugin string
-	Config map[string]interface{}
+	Config map[string]interface{} `yaml:",omitempty" json:",omitempty"`
 }
 
 type apiplexConfigRedis struct {
@@ -43,11 +43,11 @@ type apiplexConfigServe struct {
 }
 
 type apiplexConfigPlugins struct {
-	Auth         []apiplexPluginConfig
-	Backend      []apiplexPluginConfig
-	PostAuth     []apiplexPluginConfig
-	PreUpstream  []apiplexPluginConfig
-	PostUpstream []apiplexPluginConfig
+	Auth         []apiplexPluginConfig `yaml:",omitempty" json:",omitempty"`
+	Backend      []apiplexPluginConfig `yaml:",omitempty" json:",omitempty"`
+	PostAuth     []apiplexPluginConfig `yaml:",omitempty" json:",omitempty"`
+	PreUpstream  []apiplexPluginConfig `yaml:",omitempty" json:",omitempty"`
+	PostUpstream []apiplexPluginConfig `yaml:",omitempty" json:",omitempty"`
 }
 
 type ApiplexConfig struct {

@@ -20,30 +20,36 @@ func (e *AbortRequest) Error() string {
 	return e.Message
 }
 
-type ApiplexPluginConfig struct {
+type apiplexPluginConfig struct {
 	Plugin string
 	Config map[string]interface{}
 }
 
+type apiplexConfigRedis struct {
+	Host string
+	Port int
+	DB   int
+}
+type apiplexConfigServe struct {
+	Port      int
+	API       string
+	Upstreams []string
+	PortalAPI string
+	Portal    string
+}
+
+type apiplexConfigPlugins struct {
+	Auth         []apiplexPluginConfig
+	Backend      []apiplexPluginConfig
+	PostAuth     []apiplexPluginConfig
+	PreUpstream  []apiplexPluginConfig
+	PostUpstream []apiplexPluginConfig
+}
+
 type ApiplexConfig struct {
-	Redis struct {
-		Host string
-		Port int
-		DB   int
-	}
-	Serve struct {
-		APIPath        string
-		Upstream       []string
-		PortalAPI      bool
-		PortalFrontend bool
-	}
-	Plugins struct {
-		Auth         []ApiplexPluginConfig
-		Backend      []ApiplexPluginConfig
-		PostAuth     []ApiplexPluginConfig
-		PreUpstream  []ApiplexPluginConfig
-		PostUpstream []ApiplexPluginConfig
-	}
+	Redis   apiplexConfigRedis
+	Serve   apiplexConfigServe
+	Plugins apiplexConfigPlugins
 }
 
 type User struct {

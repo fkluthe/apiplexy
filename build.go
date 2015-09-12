@@ -3,16 +3,15 @@ package apiplexy
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"reflect"
-
-	log "github.com/Sirupsen/logrus"
 )
 
 var registeredPlugins = make(map[string]ApiplexPlugin)
 
 type upstream struct {
 	client  *http.Client
-	address string
+	address *url.URL
 }
 
 type apiplex struct {
@@ -28,6 +27,55 @@ type apiplex struct {
 
 func RegisterPlugin(plugin ApiplexPlugin) {
 	registeredPlugins[plugin.Name()] = plugin
+}
+
+func AvailablePlugins() map[string]string {
+	r := make(map[string]string, len(registeredPlugins))
+	for name, plugin := range registeredPlugins {
+		r[name] = plugin.Description()
+	}
+	return r
+}
+
+func ExampleConfiguration(pluginNames []string) (*ApiplexConfig, error) {
+	c := ApiplexConfig{
+		Redis: apiplexConfigRedis{
+			Host: "127.0.0.1",
+			Port: 6379,
+			DB:   0,
+		},
+		Serve: apiplexConfigServe{
+			Port:      5000,
+			API:       "/",
+			Upstreams: []string{"http://your-actual-api:8000/"},
+			PortalAPI: "/portal/api/",
+			Portal:    "/portal/",
+		},
+	}
+	plugins := apiplexConfigPlugins{}
+	for _, pname := range pluginNames {
+		plugin, ok := registeredPlugins[pname]
+		if !ok {
+			return nil, fmt.Errorf("No plugin '%s' available.", pname)
+		}
+		pconfig := apiplexPluginConfig{Plugin: pname, Config: plugin.DefaultConfig()}
+		switch plugin.(type) {
+		case AuthPlugin:
+			plugins.Auth = append(plugins.Auth, pconfig)
+		case ManagementBackendPlugin:
+			plugins.Backend = append(plugins.Backend, pconfig)
+		case BackendPlugin:
+			plugins.Backend = append(plugins.Backend, pconfig)
+		case PreUpstreamPlugin:
+			plugins.PreUpstream = append(plugins.PreUpstream, pconfig)
+		case PostUpstreamPlugin:
+			plugins.PostUpstream = append(plugins.PostUpstream, pconfig)
+		case PostAuthPlugin:
+			plugins.PostAuth = append(plugins.PostAuth, pconfig)
+		}
+	}
+	c.Plugins = plugins
+	return &c, nil
 }
 
 func ensureDefaults(target map[string]interface{}, defaults map[string]interface{}) error {
@@ -48,7 +96,7 @@ func ensureDefaults(target map[string]interface{}, defaults map[string]interface
 	return nil
 }
 
-func buildPlugins(plugins []ApiplexPluginConfig, lifecyclePluginType reflect.Type) ([]interface{}, error) {
+func buildPlugins(plugins []apiplexPluginConfig, lifecyclePluginType reflect.Type) ([]interface{}, error) {
 	built := make([]interface{}, len(plugins))
 	for i, config := range plugins {
 		ptype, ok := registeredPlugins[config.Plugin]
@@ -70,13 +118,21 @@ func buildPlugins(plugins []ApiplexPluginConfig, lifecyclePluginType reflect.Typ
 	return built, nil
 }
 
-func New(config ApiplexConfig) (*apiplex, error) {
-	log.Debug("Building new Apiplex from config.")
+func ensureFinalSlash(s string) string {
+	if s[len(s)-1] != '/' {
+		return s + "/"
+	} else {
+		return s
+	}
+}
 
-	ap := apiplex{}
+func New(config ApiplexConfig) (*http.ServeMux, error) {
+	ap := apiplex{
+		apipath: ensureFinalSlash(config.Serve.API),
+	}
 
 	// auth plugins
-	auth, err := buildPlugins(config.Plugins.Auth, reflect.TypeOf((AuthPlugin)(nil)).Elem())
+	auth, err := buildPlugins(config.Plugins.Auth, reflect.TypeOf((*AuthPlugin)(nil)).Elem())
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +143,7 @@ func New(config ApiplexConfig) (*apiplex, error) {
 	}
 
 	// backend plugins
-	backend, err := buildPlugins(config.Plugins.Backend, reflect.TypeOf((BackendPlugin)(nil)).Elem())
+	backend, err := buildPlugins(config.Plugins.Backend, reflect.TypeOf((*BackendPlugin)(nil)).Elem())
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +155,9 @@ func New(config ApiplexConfig) (*apiplex, error) {
 
 	// find mgmt backend plugin
 	for _, plugin := range ap.backends {
-		if reflect.TypeOf(plugin).Implements(reflect.TypeOf((ManagementBackendPlugin)(nil)).Elem()) {
+		// must use reflection here since type switch will see ap.backends as implementing
+		// BackendPlugin only
+		if reflect.TypeOf(plugin).Implements(reflect.TypeOf((*ManagementBackendPlugin)(nil)).Elem()) {
 			mgmt := plugin.(ManagementBackendPlugin)
 			ap.usermgmt = mgmt
 			break
@@ -107,7 +165,7 @@ func New(config ApiplexConfig) (*apiplex, error) {
 	}
 
 	// postauth plugins
-	postauth, err := buildPlugins(config.Plugins.PostAuth, reflect.TypeOf((PostAuthPlugin)(nil)).Elem())
+	postauth, err := buildPlugins(config.Plugins.PostAuth, reflect.TypeOf((*PostAuthPlugin)(nil)).Elem())
 	if err != nil {
 		return nil, err
 	}
@@ -118,7 +176,7 @@ func New(config ApiplexConfig) (*apiplex, error) {
 	}
 
 	// preupstream plugins
-	preupstream, err := buildPlugins(config.Plugins.PreUpstream, reflect.TypeOf((PreUpstreamPlugin)(nil)).Elem())
+	preupstream, err := buildPlugins(config.Plugins.PreUpstream, reflect.TypeOf((*PreUpstreamPlugin)(nil)).Elem())
 	if err != nil {
 		return nil, err
 	}
@@ -129,7 +187,7 @@ func New(config ApiplexConfig) (*apiplex, error) {
 	}
 
 	// postupstream plugins
-	postupstream, err := buildPlugins(config.Plugins.PostUpstream, reflect.TypeOf((PostUpstreamPlugin)(nil)).Elem())
+	postupstream, err := buildPlugins(config.Plugins.PostUpstream, reflect.TypeOf((*PostUpstreamPlugin)(nil)).Elem())
 	if err != nil {
 		return nil, err
 	}
@@ -140,13 +198,20 @@ func New(config ApiplexConfig) (*apiplex, error) {
 	}
 
 	// upstreams
-	ap.upstreams = make([]upstream, len(config.Serve.Upstream))
-	for i, us := range config.Serve.Upstream {
+	ap.upstreams = make([]upstream, len(config.Serve.Upstreams))
+	for i, us := range config.Serve.Upstreams {
+		u, err := url.Parse(us)
+		if err != nil {
+			return nil, fmt.Errorf("Invalid upstream address: %s", us)
+		}
 		ap.upstreams[i] = upstream{
 			client:  &http.Client{},
-			address: us,
+			address: u,
 		}
 	}
 
-	return &apiplex{}, nil
+	mux := http.NewServeMux()
+	mux.HandleFunc(ap.apipath, ap.HandleAPI)
+
+	return mux, nil
 }

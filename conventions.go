@@ -84,14 +84,14 @@ type Key struct {
 
 // An APIContext map accompanies every API request through its lifecycle. Use this
 // to store data that will be available to plugins down the chain.
-//
-// apiplexy itself is sensitive to some entries in this map and will read/write them
-// as the request passes through it. These are:
-//
-//  cost    int  Quota cost of this request.
-//  key     Key  The validated key (if not a keyless request).
-//  keyless bool Whether this request is keyless.
-type APIContext map[string]interface{}
+type APIContext struct {
+	Keyless bool
+	Key     *Key
+	Cost    int
+	Path    string
+	Log     map[string]interface{}
+	Data    map[string]interface{}
+}
 
 // Description of a key type that an AuthPlugin may offer.
 type KeyType struct {
@@ -125,8 +125,8 @@ type AuthPlugin interface {
 	ApiplexPlugin
 	AvailableTypes() []KeyType
 	Generate(keyType string) (key Key, err error)
-	Detect(req *http.Request, ctx APIContext) (maybeKey string, keyType string, authCtx map[string]interface{}, err error)
-	Validate(key *Key, req *http.Request, ctx APIContext, authCtx map[string]interface{}) (isValid bool, err error)
+	Detect(req *http.Request, ctx *APIContext) (maybeKey string, keyType string, authCtx map[string]interface{}, err error)
+	Validate(key *Key, req *http.Request, ctx *APIContext, authCtx map[string]interface{}) (isValid bool, err error)
 }
 
 type BackendPlugin interface {
@@ -154,15 +154,15 @@ type ManagementBackendPlugin interface {
 //  ctx["cost"] = 3
 type PostAuthPlugin interface {
 	ApiplexPlugin
-	PostAuth(req *http.Request, ctx APIContext) error
+	PostAuth(req *http.Request, ctx *APIContext) error
 }
 
 type PreUpstreamPlugin interface {
 	ApiplexPlugin
-	PreUpstream(req *http.Request, ctx APIContext) error
+	PreUpstream(req *http.Request, ctx *APIContext) error
 }
 
 type PostUpstreamPlugin interface {
 	ApiplexPlugin
-	PostUpstream(req *http.Request, res *http.Response, ctx APIContext) error
+	PostUpstream(req *http.Request, res *http.Response, ctx *APIContext) error
 }

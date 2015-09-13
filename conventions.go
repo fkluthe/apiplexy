@@ -77,6 +77,7 @@ type User struct {
 type Key struct {
 	ID    string                 `json:"id"`
 	Realm string                 `json:"realm"`
+	Quota string                 `json:"quota"`
 	Type  string                 `json:"type"`
 	Data  map[string]interface{} `json:"data,omitempty"`
 }
@@ -124,8 +125,8 @@ type AuthPlugin interface {
 	ApiplexPlugin
 	AvailableTypes() []KeyType
 	Generate(keyType string) (key Key, err error)
-	Detect(req *http.Request, ctx APIContext) (maybeKey string, keyType string, bits APIContext, err error)
-	Validate(key *Key, req *http.Request, ctx APIContext, authCtx APIContext) (isValid bool, err error)
+	Detect(req *http.Request, ctx APIContext) (maybeKey string, keyType string, authCtx map[string]interface{}, err error)
+	Validate(key *Key, req *http.Request, ctx APIContext, authCtx map[string]interface{}) (isValid bool, err error)
 }
 
 type BackendPlugin interface {
@@ -135,14 +136,14 @@ type BackendPlugin interface {
 
 type ManagementBackendPlugin interface {
 	BackendPlugin
-	CreateUser(email string, name string, password string, profile map[string]interface{}) (*User, error)
+	AddUser(email string, password string, user *User) (*User, error)
+	Authenticate(email string, password string) *User
 	ActivateUser(userID string) (*User, error)
 	ResetPassword(userID string, newPassword string) error
-	UpdateProfile(userID string, name string, profile map[string]interface{}) (*User, error)
-	Authenticate(email string, password string) *User
-	AddKey(userID string, keyType string, realm string, data map[string]interface{}) error
+	UpdateUser(userID string, user *User) (*User, error)
+	AddKey(userID string, key *Key) (*Key, error)
 	DeleteKey(userID string, keyID string) error
-	GetAllKeys(userID string)
+	GetAllKeys(userID string) ([]*Key, error)
 }
 
 // A plugin that runs immediately after authentication (so the request is valid

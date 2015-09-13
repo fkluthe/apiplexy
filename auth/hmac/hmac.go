@@ -37,12 +37,12 @@ func (auth *HMACAuthPlugin) Generate(keyType string) (key apiplexy.Key, err erro
 	return k, nil
 }
 
-func (auth *HMACAuthPlugin) Detect(req *http.Request, ctx apiplexy.APIContext) (maybeKey string, keyType string, bits apiplexy.APIContext, err error) {
+func (auth *HMACAuthPlugin) Detect(req *http.Request, ctx apiplexy.APIContext) (maybeKey string, keyType string, bits map[string]interface{}, err error) {
 	if !strings.HasPrefix(req.Header.Get("Authorization"), "Signature ") {
 		return "", "", nil, nil
 	}
 	sigParts := strings.Split(strings.TrimPrefix(req.Header.Get("Authorization"), "Signature "), ",")
-	sig := make(apiplexy.APIContext, len(sigParts))
+	sig := make(map[string]interface{}, len(sigParts))
 	for _, part := range sigParts {
 		p := strings.SplitN(part, "=", 2)
 		p[1] = strings.TrimLeft(p[1], "\" ")
@@ -55,7 +55,7 @@ func (auth *HMACAuthPlugin) Detect(req *http.Request, ctx apiplexy.APIContext) (
 	return sig["keyId"].(string), "HMAC", sig, nil
 }
 
-func (auth *HMACAuthPlugin) Validate(key *apiplexy.Key, req *http.Request, ctx apiplexy.APIContext, bits apiplexy.APIContext) (isValid bool, err error) {
+func (auth *HMACAuthPlugin) Validate(key *apiplexy.Key, req *http.Request, ctx apiplexy.APIContext, bits map[string]interface{}) (isValid bool, err error) {
 	mac := hmac.New(sha1.New, []byte(key.Data["secret"].(string)))
 	mac.Write([]byte(req.Header.Get("Date")))
 	sig, _ := base64.StdEncoding.DecodeString(bits["signature"].(string))
@@ -80,5 +80,5 @@ func (auth *HMACAuthPlugin) Configure(config map[string]interface{}) error {
 }
 
 func init() {
-	apiplexy.RegisterPlugin(&HMACAuthPlugin{})
+	apiplexy.RegisterPlugin(apiplexy.AuthPlugin(&HMACAuthPlugin{}))
 }

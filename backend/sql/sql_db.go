@@ -18,6 +18,7 @@ type sqlDBKey struct {
 	Realm     string
 	Type      string
 	Data      string
+	Quota     string
 	UserID    string `sql:"not null;index"`
 	CreatedAt time.Time
 	DeletedAt *time.Time
@@ -28,6 +29,7 @@ func (k *sqlDBKey) toKey() *apiplexy.Key {
 		ID:    k.ID,
 		Realm: k.Realm,
 		Type:  k.Type,
+		Quota: k.Quota,
 	}
 	json.Unmarshal([]byte(k.Data), &ck.Data)
 	return &ck
@@ -78,19 +80,19 @@ func (sql *SQLDBBackend) GetKey(keyId string, keyType string) (*apiplexy.Key, er
 	return k.toKey(), nil
 }
 
-func (sql *SQLDBBackend) CreateUser(email string, name string, password string, profile map[string]interface{}) (*apiplexy.User, error) {
+func (sql *SQLDBBackend) AddUser(email string, password string, user *apiplexy.User) (*apiplexy.User, error) {
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, err
 	}
-	bprofile, err := json.Marshal(profile)
+	bprofile, err := json.Marshal(user.Profile)
 	if err != nil {
 		return nil, err
 	}
 
 	u := sqlDBUser{
-		Email:    email,
-		Name:     name,
+		Email:    user.Email,
+		Name:     user.Name,
 		Password: hash,
 		Profile:  string(bprofile[:]),
 	}
@@ -121,13 +123,13 @@ func (sql *SQLDBBackend) ResetPassword(userID string, newPassword string) error 
 	return nil
 }
 
-func (sql *SQLDBBackend) UpdateProfile(userID string, name string, profile map[string]interface{}) (*apiplexy.User, error) {
+func (sql *SQLDBBackend) UpdateUser(userID string, user *apiplexy.User) (*apiplexy.User, error) {
 	u := sqlDBUser{}
 	if sql.db.First(&u, userID).RecordNotFound() {
 		return nil, fmt.Errorf("User not found.")
 	}
-	u.Name = name
-	bp, _ := json.Marshal(profile)
+	u.Name = user.Name
+	bp, _ := json.Marshal(user.Profile)
 	u.Profile = string(bp[:])
 	sql.db.Save(&u)
 	return u.toUser(), nil
@@ -144,15 +146,16 @@ func (sql *SQLDBBackend) Authenticate(email string, password string) *apiplexy.U
 	return u.toUser()
 }
 
-func (sql *SQLDBBackend) AddKey(userID string, keyType string, realm string, data map[string]interface{}) (*apiplexy.Key, error) {
+func (sql *SQLDBBackend) AddKey(userID string, key *apiplexy.Key) (*apiplexy.Key, error) {
 	u := sqlDBUser{}
 	if sql.db.First(&u, userID).RecordNotFound() {
 		return nil, fmt.Errorf("User not found.")
 	}
-	bd, _ := json.Marshal(data)
+	bd, _ := json.Marshal(key.Data)
 	k := sqlDBKey{
-		Realm: realm,
-		Type:  keyType,
+		Realm: key.Realm,
+		Type:  key.Type,
+		Quota: key.Quota,
 		Data:  string(bd[:]),
 	}
 	sql.db.Save(&k)
@@ -213,5 +216,5 @@ func (sql *SQLDBBackend) Configure(config map[string]interface{}) error {
 }
 
 func init() {
-	apiplexy.RegisterPlugin(&SQLDBBackend{})
+	apiplexy.RegisterPlugin(apiplexy.ManagementBackendPlugin(&SQLDBBackend{}))
 }

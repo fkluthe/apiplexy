@@ -22,6 +22,8 @@ type apiplex struct {
 	upstreams     []upstream
 	apipath       string
 	authCacheMins int
+	quotas        map[string]apiplexQuota
+	allowKeyless  bool
 	redis         *redis.Pool
 	auth          []AuthPlugin
 	backends      []BackendPlugin
@@ -152,6 +154,19 @@ func New(config ApiplexConfig) (*http.ServeMux, error) {
 		authCacheMins: 10,
 	}
 
+	if _, ok := config.Quotas["default"]; !ok {
+		return nil, fmt.Errorf("Your configuration must specify at least a 'default' quota.")
+	}
+	if kl, ok := config.Quotas["keyless"]; ok {
+		if kl.MaxKey != 0 {
+			return nil, fmt.Errorf("You cannot set a per-key maximum for the 'keyless' quota.")
+		}
+		ap.allowKeyless = true
+	} else {
+		ap.allowKeyless = false
+	}
+	ap.quotas = config.Quotas
+
 	// auth plugins
 	log.Debugf("Building auth plugins...")
 	auth, err := buildPlugins(config.Plugins.Auth, reflect.TypeOf((*AuthPlugin)(nil)).Elem())
@@ -254,7 +269,9 @@ func New(config ApiplexConfig) (*http.ServeMux, error) {
 			return err
 		},
 	}
-
+	// test connection
+	rd := ap.redis.Get()
+	_, err = rd.Do("PING")
 	if err != nil {
 		log.Fatalf("Couldn't connect to Redis. %s", err.Error())
 	}

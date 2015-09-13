@@ -3,6 +3,7 @@ package apiplexy
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"github.com/garyburd/redigo/redis"
 	"io/ioutil"
 	"math/rand"
@@ -43,7 +44,8 @@ func (ap *apiplex) error(status int, err error, res http.ResponseWriter) {
 	}
 }
 
-func (ap *apiplex) authenticateRequest(req *http.Request, rd redis.Conn, ctx APIContext) error {
+func (ap *apiplex) authenticateRequest(req *http.Request, rd redis.Conn, ctx *APIContext) error {
+	found := false
 	for _, auth := range ap.auth {
 		maybeKey, keyType, bits, err := auth.Detect(req, ctx)
 		if err != nil {
@@ -63,9 +65,11 @@ func (ap *apiplex) authenticateRequest(req *http.Request, rd redis.Conn, ctx API
 					return err
 				}
 				if ok {
-					ctx["key"] = &key
+					ctx.Key = &key
+					found = true
+					break
 				} else {
-					return Abort(403, "Your request could not be authenticated.")
+					return Abort(403, fmt.Sprintf("Access denied. Found a key of type '%s', but it is invalid.", key.Type))
 				}
 			} else {
 				// no-- try the backends
@@ -80,57 +84,103 @@ func (ap *apiplex) authenticateRequest(req *http.Request, rd redis.Conn, ctx API
 					}
 					if ok {
 						kjson, _ := json.Marshal(&key)
+						// TODO error handling if things go wrong in redis?
 						rd.Do("SETEX", "auth_cache:"+maybeKey, ap.authCacheMins*60, string(kjson))
-						ctx["key"] = key
+						ctx.Key = key
+						found = true
 						break
 					} else {
-						return Abort(403, "Your request could not be authenticated.")
+						return Abort(403, fmt.Sprintf("Access denied. Found a key of type '%s', but it is invalid.", key.Type))
 					}
 				}
 			}
+		}
+	}
+	if !found {
+		if ap.allowKeyless {
+			ctx.Keyless = true
+			ctx.Key = nil
+		} else {
+			return Abort(403, "Access denied. You or your app must supply valid credentials to access this API.")
 		}
 	}
 	return nil
 }
 
 // checks a single quota (e.g. per_ip or per_key).
-func (ap *apiplex) singleQuota(rd redis.Conn, key string, cost, max, minutes int) bool {
-	// TODO write!
-	return true
+func (ap *apiplex) overQuota(rd redis.Conn, key string, cost, max, minutes int) bool {
+	current, err := redis.Int(rd.Do("GET", key))
+	if err == redis.ErrNil {
+		current = 0
+		rd.Do("SETEX", key, minutes*60, 0)
+	}
+	if current+cost > max {
+		return true
+	}
+	rd.Do("INCRBY", key, cost)
+	return false
 }
 
 // checks a request's quota by its context.
-func (ap *apiplex) checkQuota(rd redis.Conn, ctx APIContext) error {
-	// TODO write!
+func (ap *apiplex) checkQuota(rd redis.Conn, req *http.Request, ctx *APIContext) error {
+	var quotaName string
+	var keyID string
+	if ctx.Keyless {
+		quotaName = "keyless"
+		keyID = "keyless"
+	} else {
+		quotaName = ctx.Key.Quota
+		keyID = ctx.Key.ID
+	}
+	quota, ok := ap.quotas[quotaName]
+	if !ok {
+		// TODO nonexistant quota requested-- this should be reported
+		quota = ap.quotas["default"]
+	}
+	if quota.Minutes <= 0 {
+		return nil
+	}
+	if quota.MaxIP > 0 {
+		clientIP, _, _ := net.SplitHostPort(req.RemoteAddr)
+		if ap.overQuota(rd, "quota:ip:"+keyID+":"+clientIP, ctx.Cost, quota.MaxIP, quota.Minutes) {
+			return Abort(403, fmt.Sprintf("Request quota per IP exceeded (%d reqs / %d mins). Please wait before making new requests.", quota.MaxIP, quota.Minutes))
+		}
+	}
+	if quota.MaxKey > 0 {
+		if ap.overQuota(rd, "quota:key:"+keyID, ctx.Cost, quota.MaxKey, quota.Minutes) {
+			return Abort(403, fmt.Sprintf("Request quota per key exceeded (%d reqs / %d mins). Please wait before making new requests.", quota.MaxKey, quota.Minutes))
+		}
+	}
 	return nil
 }
 
 func (ap *apiplex) HandleAPI(res http.ResponseWriter, req *http.Request) {
 	ctx := APIContext{}
-	ctx["cost"] = 1
-	ctx["path"] = "/" + strings.TrimSuffix(strings.TrimPrefix(req.URL.Path, ap.apipath), "/")
+	ctx.Keyless = false
+	ctx.Cost = 1
+	ctx.Path = "/" + strings.TrimSuffix(strings.TrimPrefix(req.URL.Path, ap.apipath), "/")
 
 	rd := ap.redis.Get()
 
-	if err := ap.authenticateRequest(req, rd, ctx); err != nil {
+	if err := ap.authenticateRequest(req, rd, &ctx); err != nil {
 		ap.error(500, err, res)
 		return
 	}
 
 	for _, postauth := range ap.postauth {
-		if err := postauth.PostAuth(req, ctx); err != nil {
+		if err := postauth.PostAuth(req, &ctx); err != nil {
 			ap.error(500, err, res)
 			return
 		}
 	}
 
-	if err := ap.checkQuota(rd, ctx); err != nil {
+	if err := ap.checkQuota(rd, req, &ctx); err != nil {
 		ap.error(500, err, res)
 		return
 	}
 
 	for _, preupstream := range ap.preupstream {
-		if err := preupstream.PreUpstream(req, ctx); err != nil {
+		if err := preupstream.PreUpstream(req, &ctx); err != nil {
 			ap.error(500, err, res)
 			return
 		}
@@ -183,7 +233,7 @@ func (ap *apiplex) HandleAPI(res http.ResponseWriter, req *http.Request) {
 	}
 
 	for _, postupstream := range ap.postupstream {
-		if err := postupstream.PostUpstream(req, urs, ctx); err != nil {
+		if err := postupstream.PostUpstream(req, urs, &ctx); err != nil {
 			ap.error(500, err, res)
 			return
 		}

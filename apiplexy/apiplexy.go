@@ -59,7 +59,7 @@ func start(c *cli.Context) {
 
 	ap, err := apiplexy.New(config)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Couldn't initialize API proxy. %s", err.Error())
+		fmt.Fprintf(os.Stderr, "Couldn't initialize API proxy. %s\n", err.Error())
 		os.Exit(2)
 	}
 

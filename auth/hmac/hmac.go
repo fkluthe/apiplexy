@@ -37,7 +37,7 @@ func (auth *HMACAuthPlugin) Generate(keyType string) (key apiplexy.Key, err erro
 	return k, nil
 }
 
-func (auth *HMACAuthPlugin) Detect(req *http.Request, ctx apiplexy.APIContext) (maybeKey string, keyType string, bits map[string]interface{}, err error) {
+func (auth *HMACAuthPlugin) Detect(req *http.Request, ctx *apiplexy.APIContext) (maybeKey string, keyType string, bits map[string]interface{}, err error) {
 	if !strings.HasPrefix(req.Header.Get("Authorization"), "Signature ") {
 		return "", "", nil, nil
 	}
@@ -55,7 +55,7 @@ func (auth *HMACAuthPlugin) Detect(req *http.Request, ctx apiplexy.APIContext) (
 	return sig["keyId"].(string), "HMAC", sig, nil
 }
 
-func (auth *HMACAuthPlugin) Validate(key *apiplexy.Key, req *http.Request, ctx apiplexy.APIContext, bits map[string]interface{}) (isValid bool, err error) {
+func (auth *HMACAuthPlugin) Validate(key *apiplexy.Key, req *http.Request, ctx *apiplexy.APIContext, bits map[string]interface{}) (isValid bool, err error) {
 	mac := hmac.New(sha1.New, []byte(key.Data["secret"].(string)))
 	mac.Write([]byte(req.Header.Get("Date")))
 	sig, _ := base64.StdEncoding.DecodeString(bits["signature"].(string))

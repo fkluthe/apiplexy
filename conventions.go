@@ -64,7 +64,6 @@ type ApiplexConfig struct {
 }
 
 type User struct {
-	ID      string                 `json:"id"`
 	Email   string                 `json:"email"`
 	Name    string                 `json:"name"`
 	Admin   bool                   `json:"-"`
@@ -135,13 +134,14 @@ type BackendPlugin interface {
 type ManagementBackendPlugin interface {
 	BackendPlugin
 	AddUser(email string, password string, user *User) (*User, error)
+	GetUser(email string) *User
 	Authenticate(email string, password string) *User
-	ActivateUser(userID string) (*User, error)
-	ResetPassword(userID string, newPassword string) error
-	UpdateUser(userID string, user *User) (*User, error)
-	AddKey(userID string, key *Key) (*Key, error)
-	DeleteKey(userID string, keyID string) error
-	GetAllKeys(userID string) ([]*Key, error)
+	ActivateUser(email string) (*User, error)
+	ResetPassword(email string, newPassword string) error
+	UpdateUser(email string, user *User) (*User, error)
+	AddKey(email string, key *Key) (*Key, error)
+	DeleteKey(email string, keyID string) error
+	GetAllKeys(email string) ([]*Key, error)
 }
 
 // A plugin that runs immediately after authentication (so the request is valid

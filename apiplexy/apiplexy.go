@@ -4,6 +4,7 @@ package main
 import (
 	_ "github.com/12foo/apiplexy/auth/hmac"
 	_ "github.com/12foo/apiplexy/backend/sql"
+	_ "github.com/12foo/apiplexy/logging"
 )
 
 import (
@@ -35,7 +36,7 @@ func listPlugins(c *cli.Context) {
 	w.Init(os.Stdout, 0, 8, 0, '\t', 0)
 	for _, name := range pnames {
 		plugin := avail[name]
-		fmt.Fprintf(w, "   %s\t%s\n", name, plugin.Description)
+		fmt.Fprintf(w, "   %s\t %s\n", name, plugin.Description)
 	}
 	fmt.Fprintln(w)
 	w.Flush()

@@ -15,9 +15,9 @@ var plugin apiplexy.ManagementBackendPlugin
 func TestMain(m *testing.M) {
 	plugin = apiplexy.ManagementBackendPlugin(&SQLDBBackend{})
 	err := plugin.Configure(map[string]interface{}{
-		"driver":        "sqlite3",
-		"database":      ":memory:",
-		"create_tables": true,
+		"driver":            "sqlite3",
+		"connection_string": ":memory:",
+		"create_tables":     true,
 	})
 	if err != nil {
 		fmt.Printf("Couldn't initialize in-memory sqlite DB for testing. %s\n", err.Error())
@@ -30,7 +30,8 @@ func TestMain(m *testing.M) {
 func TestConfigure(t *testing.T) {
 	Convey("Plugin should not panic when configuring with default configuration", t, func() {
 		So(func() {
-			_ = plugin.Configure(plugin.DefaultConfig())
+			tplugin := apiplexy.ManagementBackendPlugin(&SQLDBBackend{})
+			_ = tplugin.Configure(plugin.DefaultConfig())
 		}, ShouldNotPanic)
 	})
 }

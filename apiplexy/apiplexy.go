@@ -15,15 +15,26 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"sort"
 	"strconv"
 	"text/tabwriter"
 )
 
 func listPlugins(c *cli.Context) {
 	fmt.Printf("Available plugins:\n\n")
+	avail := apiplexy.AvailablePlugins()
+	pnames := make([]string, len(avail))
+	i := 0
+	for n, _ := range avail {
+		pnames[i] = n
+		i++
+	}
+	sort.Strings(pnames)
+
 	w := new(tabwriter.Writer)
 	w.Init(os.Stdout, 0, 8, 0, '\t', 0)
-	for name, plugin := range apiplexy.AvailablePlugins() {
+	for _, name := range pnames {
+		plugin := avail[name]
 		fmt.Fprintf(w, "   %s\t%s\n", name, plugin.Description)
 	}
 	fmt.Fprintln(w)

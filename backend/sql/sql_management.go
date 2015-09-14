@@ -204,47 +204,14 @@ func (sql *SQLDBBackend) GetAllKeys(email string) ([]*apiplexy.Key, error) {
 
 func (sql *SQLDBBackend) DefaultConfig() map[string]interface{} {
 	return map[string]interface{}{
-		"driver":        strings.Join(gosql.Drivers(), "/"),
-		"host":          "localhost",
-		"port":          5432,
-		"database":      "apiplexy-db",
-		"user":          "apiplexy-user",
-		"password":      "my-secret-password",
-		"ssl":           true,
-		"create_tables": false,
+		"driver":            strings.Join(gosql.Drivers(), "/"),
+		"connection_string": "host=localhost port=5432 user=apiplexy password=apiplexy dbname=apiplexy",
+		"create_tables":     false,
 	}
 }
 
 func (sql *SQLDBBackend) Configure(config map[string]interface{}) error {
-	driverName := config["driver"]
-	if driverName != "mysql" && driverName != "postgres" && driverName != "mssql" && driverName != "sqlite3" {
-		return fmt.Errorf("'%s' is not a valid driver for a SQL DB.", driverName)
-	}
-
-	var err error
-	var db gorm.DB
-
-	switch driverName {
-	case "sqlite3":
-		db, err = gorm.Open("sqlite3", config["database"])
-	case "postgres":
-		var ssl string
-		if config["ssl"].(bool) {
-			ssl = "enabled"
-		} else {
-			ssl = "disabled"
-		}
-		db, err = gorm.Open("postgres", fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
-			config["host"], config["port"], config["user"], config["password"], config["database"], ssl))
-	case "mysql":
-		db, err = gorm.Open("mysql", fmt.Sprintf("%s:%s@%s:%d/%s?charset=utf8&parseTime=True&loc=Local",
-			config["user"], config["password"], config["host"], config["port"], config["database"]))
-	case "mssql":
-		db, err = gorm.Open("postgres", fmt.Sprintf("server=%s;port=%d;user id=%s;password=%s;database=%s;encrypt=%b",
-			config["host"], config["port"], config["user"], config["password"], config["database"], config["ssl"]))
-	default:
-		return fmt.Errorf("Unknown database driver: %s", driverName)
-	}
+	db, err := gorm.Open(config["driver"].(string), config["connection_string"].(string))
 
 	if err != nil {
 		return fmt.Errorf("Error connecting to database. %s", err.Error())
@@ -266,8 +233,8 @@ func (sql *SQLDBBackend) Configure(config map[string]interface{}) error {
 
 func init() {
 	apiplexy.RegisterPlugin(
-		"sql-db",
-		"Use popular SQL databases as backend stores (full user/key management).",
+		"sql-full",
+		"Use popular SQL databases as backend stores (with full user/key management).",
 		"https://github.com/12foo/apiplexy/tree/master/backend/sql",
 		apiplexy.ManagementBackendPlugin(&SQLDBBackend{}),
 	)

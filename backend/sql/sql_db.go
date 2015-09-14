@@ -16,19 +16,19 @@ import (
 )
 
 type sqlDBKey struct {
-	ID        string
+	KeyID     string `sql:"primary_key" gorm:"primary_key"`
 	Realm     string
 	Type      string
 	Data      string
 	Quota     string
-	UserID    string `sql:"not null;index"`
+	User      string `sql:"not null;index"`
 	CreatedAt time.Time
 	DeletedAt *time.Time
 }
 
 func (k *sqlDBKey) toKey() *apiplexy.Key {
 	ck := apiplexy.Key{
-		ID:    k.ID,
+		ID:    k.KeyID,
 		Realm: k.Realm,
 		Type:  k.Type,
 		Quota: k.Quota,
@@ -42,8 +42,7 @@ func (k *sqlDBKey) TableName() string {
 }
 
 type sqlDBUser struct {
-	ID        string
-	Email     string `sql:"type:varchar(100);not null;unique_index"`
+	Email     string `sql:"type:varchar(100);primary_key" gorm:"primary_key"`
 	Name      string
 	Password  []byte `sql:"not null"`
 	Admin     bool
@@ -60,7 +59,6 @@ func (u *sqlDBUser) TableName() string {
 
 func (u *sqlDBUser) toUser() *apiplexy.User {
 	cu := apiplexy.User{
-		ID:     u.ID,
 		Email:  u.Email,
 		Name:   u.Name,
 		Admin:  u.Admin,
@@ -76,16 +74,23 @@ type SQLDBBackend struct {
 
 func (sql *SQLDBBackend) GetKey(keyId string, keyType string) (*apiplexy.Key, error) {
 	k := sqlDBKey{}
-	if sql.db.First(&k, keyId).RecordNotFound() {
+	if sql.db.Where(sqlDBKey{KeyID: keyId, Type: keyType}).First(&k).RecordNotFound() {
 		return nil, nil
 	}
 	return k.toKey(), nil
 }
 
 func (sql *SQLDBBackend) AddUser(email string, password string, user *apiplexy.User) (*apiplexy.User, error) {
+	cu := sqlDBUser{}
+	if !sql.db.Where(&sqlDBUser{Email: email}).First(&cu).RecordNotFound() {
+		return nil, fmt.Errorf("A user with that email already exists.")
+	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, err
+	}
+	if user.Profile == nil {
+		user.Profile = make(map[string]interface{})
 	}
 	bprofile, err := json.Marshal(user.Profile)
 	if err != nil {
@@ -104,42 +109,49 @@ func (sql *SQLDBBackend) AddUser(email string, password string, user *apiplexy.U
 	return u.toUser(), nil
 }
 
-func (sql *SQLDBBackend) ActivateUser(userID string) (*apiplexy.User, error) {
+func (sql *SQLDBBackend) GetUser(email string) *apiplexy.User {
 	u := sqlDBUser{}
-	if sql.db.First(&u, userID).RecordNotFound() {
+	if sql.db.Where(&sqlDBUser{Email: email}).First(&u).RecordNotFound() {
+		return nil
+	}
+	return u.toUser()
+}
+
+func (sql *SQLDBBackend) ActivateUser(email string) (*apiplexy.User, error) {
+	u := sqlDBUser{}
+	if sql.db.Where(&sqlDBUser{Email: email}).First(&u).RecordNotFound() {
 		return nil, fmt.Errorf("User not found.")
 	}
-	u.Active = true
-	sql.db.Save(&u)
+	sql.db.Model(&u).Where(&sqlDBUser{Email: email}).UpdateColumns(sqlDBUser{Active: true})
 	return u.toUser(), nil
 }
 
-func (sql *SQLDBBackend) ResetPassword(userID string, newPassword string) error {
+func (sql *SQLDBBackend) ResetPassword(email string, newPassword string) error {
 	u := sqlDBUser{}
-	if sql.db.First(&u, userID).RecordNotFound() {
+	if sql.db.Where(&sqlDBUser{Email: email}).First(&u).RecordNotFound() {
 		return fmt.Errorf("User not found.")
 	}
-	hash, _ := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
-	u.Password = hash
-	sql.db.Save(&u)
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+	sql.db.Model(&u).Where(&sqlDBUser{Email: email}).UpdateColumns(sqlDBUser{Password: hash})
 	return nil
 }
 
-func (sql *SQLDBBackend) UpdateUser(userID string, user *apiplexy.User) (*apiplexy.User, error) {
+func (sql *SQLDBBackend) UpdateUser(email string, user *apiplexy.User) (*apiplexy.User, error) {
 	u := sqlDBUser{}
-	if sql.db.First(&u, userID).RecordNotFound() {
+	if sql.db.Where(&sqlDBUser{Email: email}).First(&u).RecordNotFound() {
 		return nil, fmt.Errorf("User not found.")
 	}
-	u.Name = user.Name
 	bp, _ := json.Marshal(user.Profile)
-	u.Profile = string(bp[:])
-	sql.db.Save(&u)
+	sql.db.Model(&u).Where(&sqlDBUser{Email: email}).UpdateColumns(sqlDBUser{Name: user.Name, Profile: string(bp[:])})
 	return u.toUser(), nil
 }
 
 func (sql *SQLDBBackend) Authenticate(email string, password string) *apiplexy.User {
 	u := sqlDBUser{}
-	if sql.db.Where(&sqlDBUser{Email: email}).First(&u).RecordNotFound() {
+	if sql.db.Where(&sqlDBUser{Email: email, Active: true}).First(&u).RecordNotFound() {
 		return nil
 	}
 	if bcrypt.CompareHashAndPassword(u.Password, []byte(password)) != nil {
@@ -148,37 +160,39 @@ func (sql *SQLDBBackend) Authenticate(email string, password string) *apiplexy.U
 	return u.toUser()
 }
 
-func (sql *SQLDBBackend) AddKey(userID string, key *apiplexy.Key) (*apiplexy.Key, error) {
+func (sql *SQLDBBackend) AddKey(email string, key *apiplexy.Key) (*apiplexy.Key, error) {
 	u := sqlDBUser{}
-	if sql.db.First(&u, userID).RecordNotFound() {
+	if sql.db.Where(&sqlDBUser{Email: email}).First(&u).RecordNotFound() {
 		return nil, fmt.Errorf("User not found.")
 	}
 	bd, _ := json.Marshal(key.Data)
 	k := sqlDBKey{
+		KeyID: key.ID,
 		Realm: key.Realm,
 		Type:  key.Type,
 		Quota: key.Quota,
 		Data:  string(bd[:]),
+		User:  email,
 	}
-	sql.db.Save(&k)
+	sql.db.Create(&k)
 	return k.toKey(), nil
 }
 
-func (sql *SQLDBBackend) DeleteKey(userID string, keyID string) error {
+func (sql *SQLDBBackend) DeleteKey(email string, keyID string) error {
 	k := sqlDBKey{}
-	if sql.db.First(&k, keyID).RecordNotFound() {
+	if sql.db.Where(sqlDBKey{KeyID: keyID}).First(&k).RecordNotFound() {
 		return fmt.Errorf("Key does not exist.")
 	}
-	if k.UserID != userID {
+	if k.User != email {
 		return fmt.Errorf("You are not the owner of this key.")
 	}
 	sql.db.Delete(&k)
 	return nil
 }
 
-func (sql *SQLDBBackend) GetAllKeys(userID string) ([]*apiplexy.Key, error) {
+func (sql *SQLDBBackend) GetAllKeys(email string) ([]*apiplexy.Key, error) {
 	ks := []sqlDBKey{}
-	if sql.db.Find(&ks, sqlDBKey{UserID: userID}).Error != nil {
+	if sql.db.Find(&ks, sqlDBKey{User: email}).Error != nil {
 		return nil, nil
 	}
 	cks := make([]*apiplexy.Key, len(ks))
@@ -186,14 +200,6 @@ func (sql *SQLDBBackend) GetAllKeys(userID string) ([]*apiplexy.Key, error) {
 		cks[i] = k.toKey()
 	}
 	return cks, nil
-}
-
-func (sql *SQLDBBackend) Name() string {
-	return "sql-db"
-}
-
-func (sql *SQLDBBackend) Description() string {
-	return "Use popular SQL databases as backend stores (full user/key management)."
 }
 
 func (sql *SQLDBBackend) DefaultConfig() map[string]interface{} {
@@ -211,7 +217,7 @@ func (sql *SQLDBBackend) DefaultConfig() map[string]interface{} {
 
 func (sql *SQLDBBackend) Configure(config map[string]interface{}) error {
 	driverName := config["driver"]
-	if driverName != "mysql" && driverName != "postgres" && driverName != "mssql" && driverName == "sqlite3" {
+	if driverName != "mysql" && driverName != "postgres" && driverName != "mssql" && driverName != "sqlite3" {
 		return fmt.Errorf("'%s' is not a valid driver for a SQL DB.", driverName)
 	}
 

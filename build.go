@@ -81,12 +81,13 @@ func ExampleConfiguration(pluginNames []string) (*ApiplexConfig, error) {
 	}
 	plugins := apiplexConfigPlugins{}
 	for _, pname := range pluginNames {
-		plugin, ok := registeredPlugins[pname]
+		pInfo, ok := registeredPlugins[pname]
 		if !ok {
 			return nil, fmt.Errorf("No plugin '%s' available.", pname)
 		}
-		pconfig := apiplexPluginConfig{Plugin: pname, Config: plugin.plugin.DefaultConfig()}
-		switch plugin.plugin.(type) {
+		plugin := pInfo.plugin
+		pconfig := apiplexPluginConfig{Plugin: pname, Config: plugin.DefaultConfig()}
+		switch plugin.(type) {
 		case AuthPlugin:
 			plugins.Auth = append(plugins.Auth, pconfig)
 		case ManagementBackendPlugin:
@@ -130,7 +131,8 @@ func buildPlugins(plugins []apiplexPluginConfig, lifecyclePluginType reflect.Typ
 		if !ok {
 			return nil, fmt.Errorf("No plugin named '%s' available.", config.Plugin)
 		}
-		var maybePlugin ApiplexPlugin = reflect.New(reflect.TypeOf(ptype)).Interface().(ApiplexPlugin)
+		pt := reflect.New(reflect.TypeOf(ptype.plugin))
+		maybePlugin := pt.Elem().Interface().(ApiplexPlugin)
 		if !reflect.TypeOf(maybePlugin).Implements(lifecyclePluginType) {
 			return nil, fmt.Errorf("Plugin '%s' cannot be loaded as %T.", config.Plugin, lifecyclePluginType)
 		}

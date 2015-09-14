@@ -11,7 +11,14 @@ import (
 	"time"
 )
 
-var registeredPlugins = make(map[string]ApiplexPlugin)
+type apiplexPluginInfo struct {
+	Name        string
+	Description string
+	Link        string
+	plugin      ApiplexPlugin
+}
+
+var registeredPlugins = make(map[string]apiplexPluginInfo)
 
 type upstream struct {
 	client  *http.Client
@@ -33,16 +40,17 @@ type apiplex struct {
 	postupstream  []PostUpstreamPlugin
 }
 
-func RegisterPlugin(plugin ApiplexPlugin) {
-	registeredPlugins[plugin.Name()] = plugin
+func RegisterPlugin(name, description, link string, plugin ApiplexPlugin) {
+	registeredPlugins[name] = apiplexPluginInfo{
+		Name:        name,
+		Description: description,
+		Link:        link,
+		plugin:      plugin,
+	}
 }
 
-func AvailablePlugins() map[string]string {
-	r := make(map[string]string, len(registeredPlugins))
-	for name, plugin := range registeredPlugins {
-		r[name] = plugin.Description()
-	}
-	return r
+func AvailablePlugins() map[string]apiplexPluginInfo {
+	return registeredPlugins
 }
 
 func ExampleConfiguration(pluginNames []string) (*ApiplexConfig, error) {
@@ -77,8 +85,8 @@ func ExampleConfiguration(pluginNames []string) (*ApiplexConfig, error) {
 		if !ok {
 			return nil, fmt.Errorf("No plugin '%s' available.", pname)
 		}
-		pconfig := apiplexPluginConfig{Plugin: pname, Config: plugin.DefaultConfig()}
-		switch plugin.(type) {
+		pconfig := apiplexPluginConfig{Plugin: pname, Config: plugin.plugin.DefaultConfig()}
+		switch plugin.plugin.(type) {
 		case AuthPlugin:
 			plugins.Auth = append(plugins.Auth, pconfig)
 		case ManagementBackendPlugin:

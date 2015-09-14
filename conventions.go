@@ -101,8 +101,6 @@ type KeyType struct {
 
 type ApiplexPlugin interface {
 	Configure(config map[string]interface{}) error
-	Name() string
-	Description() string
 	DefaultConfig() map[string]interface{}
 }
 

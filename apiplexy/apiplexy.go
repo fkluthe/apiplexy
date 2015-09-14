@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"github.com/12foo/apiplexy"
 	"github.com/codegangsta/cli"
+	"github.com/skratchdot/open-golang/open"
 	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	"net/http"
@@ -22,11 +23,25 @@ func listPlugins(c *cli.Context) {
 	fmt.Printf("Available plugins:\n\n")
 	w := new(tabwriter.Writer)
 	w.Init(os.Stdout, 0, 8, 0, '\t', 0)
-	for name, description := range apiplexy.AvailablePlugins() {
-		fmt.Fprintf(w, "   %s\t%s\n", name, description)
+	for name, plugin := range apiplexy.AvailablePlugins() {
+		fmt.Fprintf(w, "   %s\t%s\n", name, plugin.Description)
 	}
 	fmt.Fprintln(w)
 	w.Flush()
+}
+
+func docPlugin(c *cli.Context) {
+	if len(c.Args()) != 1 {
+		fmt.Printf("Which documentation do you want to open? Try 'apiplexy plugin-doc <plugin-name>'.\n")
+		os.Exit(1)
+	}
+	plugin, ok := apiplexy.AvailablePlugins()[c.Args()[0]]
+	if !ok {
+		fmt.Printf("Plugin '%s' not found. Try 'apiplexy plugins' to list available ones.\n", c.Args()[0])
+		os.Exit(1)
+	}
+	fmt.Printf("Opening documentation for '%s' at: %s\n", plugin.Name, plugin.Link)
+	open.Start(plugin.Link)
 }
 
 func generateConfig(c *cli.Context) {
@@ -82,7 +97,13 @@ func main() {
 			Action:  listPlugins,
 		},
 		{
-			Name:    "genconf",
+			Name:    "plugin-doc",
+			Usage:   "Opens documentation webpage for a plugin",
+			Aliases: []string{"doc"},
+			Action:  docPlugin,
+		},
+		{
+			Name:    "gen-conf",
 			Usage:   "Generates a configuration file with the specified plugins",
 			Aliases: []string{"gen"},
 			Action:  generateConfig,

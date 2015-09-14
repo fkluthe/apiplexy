@@ -65,10 +65,11 @@ func (l *IPLocatorPlugin) Configure(config map[string]interface{}) error {
 }
 
 func init() {
+	// _ = apiplexy.PostUpstreamPlugin(&IPLocatorPlugin{})
 	apiplexy.RegisterPlugin(
 		"geolocation",
 		"Resolve IPs to their geographical location (using GeoLite2).",
 		"http://github.com/12foo/apiplexy/tree/master/logging",
-		apiplexy.PostUpstreamPlugin(&IPLocatorPlugin{}),
+		IPLocatorPlugin{},
 	)
 }

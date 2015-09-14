@@ -15,7 +15,7 @@ type apiplexPluginInfo struct {
 	Name        string
 	Description string
 	Link        string
-	plugin      ApiplexPlugin
+	pluginType  reflect.Type
 }
 
 var registeredPlugins = make(map[string]apiplexPluginInfo)
@@ -40,12 +40,12 @@ type apiplex struct {
 	postupstream  []PostUpstreamPlugin
 }
 
-func RegisterPlugin(name, description, link string, plugin ApiplexPlugin) {
+func RegisterPlugin(name, description, link string, plugin interface{}) {
 	registeredPlugins[name] = apiplexPluginInfo{
 		Name:        name,
 		Description: description,
 		Link:        link,
-		plugin:      plugin,
+		pluginType:  reflect.TypeOf(plugin),
 	}
 }
 
@@ -85,9 +85,12 @@ func ExampleConfiguration(pluginNames []string) (*ApiplexConfig, error) {
 		if !ok {
 			return nil, fmt.Errorf("No plugin '%s' available.", pname)
 		}
-		plugin := pInfo.plugin
-		pconfig := apiplexPluginConfig{Plugin: pname, Config: plugin.DefaultConfig()}
-		switch plugin.(type) {
+
+		pluginPtr := reflect.New(pInfo.pluginType)
+		defConfig := pluginPtr.MethodByName("DefaultConfig").Call([]reflect.Value{})[0].Interface().(map[string]interface{})
+		pconfig := apiplexPluginConfig{Plugin: pname, Config: defConfig}
+
+		switch pluginPtr.Interface().(type) {
 		case AuthPlugin:
 			plugins.Auth = append(plugins.Auth, pconfig)
 		case ManagementBackendPlugin:
@@ -131,18 +134,22 @@ func buildPlugins(plugins []apiplexPluginConfig, lifecyclePluginType reflect.Typ
 		if !ok {
 			return nil, fmt.Errorf("No plugin named '%s' available.", config.Plugin)
 		}
-		pt := reflect.New(reflect.TypeOf(ptype.plugin))
-		maybePlugin := pt.Elem().Interface().(ApiplexPlugin)
-		if !reflect.TypeOf(maybePlugin).Implements(lifecyclePluginType) {
-			return nil, fmt.Errorf("Plugin '%s' cannot be loaded as %T.", config.Plugin, lifecyclePluginType)
+		pt := reflect.New(ptype.pluginType)
+
+		if ptype.pluginType.Implements(lifecyclePluginType) {
+			return nil, fmt.Errorf("Plugin '%s' (%s) cannot be loaded as %s.", config.Plugin, ptype.pluginType.Name(), lifecyclePluginType.Name())
 		}
-		if err := ensureDefaults(config.Config, maybePlugin.DefaultConfig()); err != nil {
+
+		defConfig := pt.MethodByName("DefaultConfig").Call([]reflect.Value{})[0].Interface().(map[string]interface{})
+		if err := ensureDefaults(config.Config, defConfig); err != nil {
 			return nil, fmt.Errorf("While configuring '%s': %s", config.Plugin, err.Error())
 		}
-		if err := maybePlugin.Configure(config.Config); err != nil {
+		maybeErr := pt.MethodByName("Configure").Call([]reflect.Value{reflect.ValueOf(config.Config)})[0].Interface()
+		if maybeErr != nil {
+			err := maybeErr.(error)
 			return nil, fmt.Errorf("While configuring '%s': %s", config.Plugin, err.Error())
 		}
-		built[i] = maybePlugin
+		built[i] = pt.Interface()
 	}
 	return built, nil
 }

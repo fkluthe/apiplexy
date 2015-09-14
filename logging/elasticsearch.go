@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"github.com/12foo/apiplexy"
 	"net/http"
-	"strings"
 )
 
 //ElasticsearchPlugin ..
@@ -51,20 +50,17 @@ func (el *ElasticsearchPlugin) DefaultConfig() map[string]interface{} {
 }
 
 func (el *ElasticsearchPlugin) Configure(config map[string]interface{}) error {
-	path := config["mmdb_path"]
-	if strings.HasSuffix(path.(string), ".mmdb") {
-		return fmt.Errorf("'%s' is not a valid geo database", path)
-	}
 	el.url = config["elastic_url"].(string)
 	el.useDynamicMapping = config["dynamic_mapping"].(bool)
 	return nil
 }
 
 func init() {
+	// _ = apiplexy.PostUpstreamPlugin(&ElasticsearchPlugin{})
 	apiplexy.RegisterPlugin(
 		"elasticsearch",
 		"Log API requests to ElasticSearch.",
 		"https://github.com/12foo/apiplexy/tree/master/logging",
-		apiplexy.PostUpstreamPlugin(&ElasticsearchPlugin{}),
+		ElasticsearchPlugin{},
 	)
 }

@@ -232,10 +232,11 @@ func (sql *SQLDBBackend) Configure(config map[string]interface{}) error {
 }
 
 func init() {
+	// _ = apiplexy.ManagementBackendPlugin(&SQLDBBackend{})
 	apiplexy.RegisterPlugin(
 		"sql-full",
 		"Use popular SQL databases as backend stores (with full user/key management).",
 		"https://github.com/12foo/apiplexy/tree/master/backend/sql",
-		apiplexy.ManagementBackendPlugin(&SQLDBBackend{}),
+		SQLDBBackend{},
 	)
 }

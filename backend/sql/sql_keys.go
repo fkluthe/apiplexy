@@ -86,10 +86,11 @@ func (sql *SQLKeyBackend) Configure(config map[string]interface{}) error {
 }
 
 func init() {
+	// _ = apiplexy.BackendPlugin(&SQLKeyBackend{})
 	apiplexy.RegisterPlugin(
 		"sql-query",
 		"Perform simple key checks via query against a backend SQL database.",
 		"https://github.com/12foo/apiplexy/tree/master/backend/sql",
-		apiplexy.BackendPlugin(&SQLKeyBackend{}),
+		SQLKeyBackend{},
 	)
 }

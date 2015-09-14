@@ -72,10 +72,11 @@ func (auth *HMACAuthPlugin) Configure(config map[string]interface{}) error {
 }
 
 func init() {
+	// _ = apiplexy.AuthPlugin(&HMACAuthPlugin{})
 	apiplexy.RegisterPlugin(
 		"hmac",
 		"Authenticate requests via HMAC.",
 		"https://github.com/12foo/apiplexy/tree/master/auth/hmac",
-		apiplexy.AuthPlugin(&HMACAuthPlugin{}),
+		HMACAuthPlugin{},
 	)
 }

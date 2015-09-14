@@ -155,10 +155,13 @@ func (ap *apiplex) checkQuota(rd redis.Conn, req *http.Request, ctx *APIContext)
 }
 
 func (ap *apiplex) HandleAPI(res http.ResponseWriter, req *http.Request) {
-	ctx := APIContext{}
-	ctx.Keyless = false
-	ctx.Cost = 1
-	ctx.Path = "/" + strings.TrimSuffix(strings.TrimPrefix(req.URL.Path, ap.apipath), "/")
+	ctx := APIContext{
+		Keyless: false,
+		Cost:    1,
+		Path:    "/" + strings.TrimSuffix(strings.TrimPrefix(req.URL.Path, ap.apipath), "/"),
+		Log:     make(map[string]interface{}),
+		Data:    make(map[string]interface{}),
+	}
 
 	rd := ap.redis.Get()
 

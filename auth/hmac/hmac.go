@@ -62,14 +62,6 @@ func (auth *HMACAuthPlugin) Validate(key *apiplexy.Key, req *http.Request, ctx *
 	return hmac.Equal(mac.Sum(nil), sig), nil
 }
 
-func (auth *HMACAuthPlugin) Name() string {
-	return "hmac"
-}
-
-func (auth *HMACAuthPlugin) Description() string {
-	return "Authenticate requests via HMAC."
-}
-
 func (auth *HMACAuthPlugin) DefaultConfig() map[string]interface{} {
 	// TODO make location of HMAC signature configurable
 	return nil
@@ -80,5 +72,10 @@ func (auth *HMACAuthPlugin) Configure(config map[string]interface{}) error {
 }
 
 func init() {
-	apiplexy.RegisterPlugin(apiplexy.AuthPlugin(&HMACAuthPlugin{}))
+	apiplexy.RegisterPlugin(
+		"hmac",
+		"Authenticate requests via HMAC.",
+		"https://github.com/12foo/apiplexy/tree/master/auth/hmac",
+		apiplexy.AuthPlugin(&HMACAuthPlugin{}),
+	)
 }

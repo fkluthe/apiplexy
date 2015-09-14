@@ -1,6 +1,7 @@
 package sql
 
 import (
+	gosql "database/sql"
 	"encoding/json"
 	"fmt"
 	"github.com/12foo/apiplexy"
@@ -10,6 +11,7 @@ import (
 	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
 	"golang.org/x/crypto/bcrypt"
+	"strings"
 	"time"
 )
 
@@ -69,7 +71,7 @@ func (u *sqlDBUser) toUser() *apiplexy.User {
 }
 
 type SQLDBBackend struct {
-	db *gorm.DB
+	db gorm.DB
 }
 
 func (sql *SQLDBBackend) GetKey(keyId string, keyType string) (*apiplexy.Key, error) {
@@ -91,7 +93,7 @@ func (sql *SQLDBBackend) AddUser(email string, password string, user *apiplexy.U
 	}
 
 	u := sqlDBUser{
-		Email:    user.Email,
+		Email:    email,
 		Name:     user.Name,
 		Password: hash,
 		Profile:  string(bprofile[:]),
@@ -196,13 +198,14 @@ func (sql *SQLDBBackend) Description() string {
 
 func (sql *SQLDBBackend) DefaultConfig() map[string]interface{} {
 	return map[string]interface{}{
-		"driver":   "mysql/postgres/mssql/sqlite3",
-		"host":     "localhost",
-		"port":     5432,
-		"database": "apiplexy-db",
-		"user":     "apiplexy-user",
-		"password": "my-secret-password",
-		"ssl":      true,
+		"driver":        strings.Join(gosql.Drivers(), "/"),
+		"host":          "localhost",
+		"port":          5432,
+		"database":      "apiplexy-db",
+		"user":          "apiplexy-user",
+		"password":      "my-secret-password",
+		"ssl":           true,
+		"create_tables": false,
 	}
 }
 
@@ -212,9 +215,54 @@ func (sql *SQLDBBackend) Configure(config map[string]interface{}) error {
 		return fmt.Errorf("'%s' is not a valid driver for a SQL DB.", driverName)
 	}
 
+	var err error
+	var db gorm.DB
+
+	switch driverName {
+	case "sqlite3":
+		db, err = gorm.Open("sqlite3", config["database"])
+	case "postgres":
+		var ssl string
+		if config["ssl"].(bool) {
+			ssl = "enabled"
+		} else {
+			ssl = "disabled"
+		}
+		db, err = gorm.Open("postgres", fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
+			config["host"], config["port"], config["user"], config["password"], config["database"], ssl))
+	case "mysql":
+		db, err = gorm.Open("mysql", fmt.Sprintf("%s:%s@%s:%d/%s?charset=utf8&parseTime=True&loc=Local",
+			config["user"], config["password"], config["host"], config["port"], config["database"]))
+	case "mssql":
+		db, err = gorm.Open("postgres", fmt.Sprintf("server=%s;port=%d;user id=%s;password=%s;database=%s;encrypt=%b",
+			config["host"], config["port"], config["user"], config["password"], config["database"], config["ssl"]))
+	default:
+		return fmt.Errorf("Unknown database driver: %s", driverName)
+	}
+
+	if err != nil {
+		return fmt.Errorf("Error connecting to database. %s", err.Error())
+	}
+
+	if config["create_tables"].(bool) {
+		if err = db.CreateTable(&sqlDBUser{}).Error; err != nil {
+			return fmt.Errorf("Error creating user table: %s", err.Error())
+		}
+		if err = db.CreateTable(&sqlDBKey{}).Error; err != nil {
+			return fmt.Errorf("Error creating key table: %s", err.Error())
+		}
+	}
+
+	sql.db = db
+
 	return nil
 }
 
 func init() {
-	apiplexy.RegisterPlugin(apiplexy.ManagementBackendPlugin(&SQLDBBackend{}))
+	apiplexy.RegisterPlugin(
+		"sql-db",
+		"Use popular SQL databases as backend stores (full user/key management).",
+		"https://github.com/12foo/apiplexy/tree/master/backend/sql",
+		apiplexy.ManagementBackendPlugin(&SQLDBBackend{}),
+	)
 }

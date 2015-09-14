@@ -31,7 +31,7 @@ func TestConfigure(t *testing.T) {
 	Convey("Plugin should not panic when configuring with default configuration", t, func() {
 		So(func() {
 			tplugin := apiplexy.ManagementBackendPlugin(&SQLDBBackend{})
-			_ = tplugin.Configure(plugin.DefaultConfig())
+			_ = tplugin.Configure(tplugin.DefaultConfig())
 		}, ShouldNotPanic)
 	})
 }

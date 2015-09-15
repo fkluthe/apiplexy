@@ -94,6 +94,7 @@ func start(c *cli.Context) {
 		Addr:    "0.0.0.0:" + strconv.Itoa(config.Serve.Port),
 		Handler: ap,
 	}
+	fmt.Printf("Running server on port %d.\n", config.Serve.Port)
 	server.ListenAndServe()
 }
 

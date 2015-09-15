@@ -85,12 +85,13 @@ type Key struct {
 // An APIContext map accompanies every API request through its lifecycle. Use this
 // to store data that will be available to plugins down the chain.
 type APIContext struct {
-	Keyless bool
-	Key     *Key
-	Cost    int
-	Path    string
-	Log     map[string]interface{}
-	Data    map[string]interface{}
+	Keyless  bool
+	Key      *Key
+	Cost     int
+	Path     string
+	Upstream *APIUpstream
+	Log      map[string]interface{}
+	Data     map[string]interface{}
 }
 
 // Description of a key type that an AuthPlugin may offer.
@@ -134,13 +135,13 @@ type BackendPlugin interface {
 
 type ManagementBackendPlugin interface {
 	BackendPlugin
-	AddUser(email string, password string, user *User) (*User, error)
+	AddUser(email string, password string, user *User) error
 	GetUser(email string) *User
 	Authenticate(email string, password string) *User
-	ActivateUser(email string) (*User, error)
+	ActivateUser(email string) error
 	ResetPassword(email string, newPassword string) error
-	UpdateUser(email string, user *User) (*User, error)
-	AddKey(email string, key *Key) (*Key, error)
+	UpdateUser(email string, user *User) error
+	AddKey(email string, key *Key) error
 	DeleteKey(email string, keyID string) error
 	GetAllKeys(email string) ([]*Key, error)
 }

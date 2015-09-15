@@ -2,8 +2,8 @@ package apiplexy
 
 import (
 	"fmt"
-	log "github.com/Sirupsen/logrus"
 	"github.com/garyburd/redigo/redis"
+	"log"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -20,13 +20,13 @@ type apiplexPluginInfo struct {
 
 var registeredPlugins = make(map[string]apiplexPluginInfo)
 
-type upstream struct {
-	client  *http.Client
-	address *url.URL
+type APIUpstream struct {
+	Client  *http.Client
+	Address *url.URL
 }
 
 type apiplex struct {
-	upstreams     []upstream
+	upstreams     []APIUpstream
 	apipath       string
 	authCacheMins int
 	quotas        map[string]apiplexQuota
@@ -166,8 +166,6 @@ func ensureFinalSlash(s string) string {
 }
 
 func New(config ApiplexConfig) (*http.ServeMux, error) {
-	log.Infof("Initializing API proxy from configuration.")
-
 	// TODO make everything configurable
 	ap := apiplex{
 		apipath:       ensureFinalSlash(config.Serve.API),
@@ -188,7 +186,6 @@ func New(config ApiplexConfig) (*http.ServeMux, error) {
 	ap.quotas = config.Quotas
 
 	// auth plugins
-	log.Debugf("Building auth plugins...")
 	auth, err := buildPlugins(config.Plugins.Auth, reflect.TypeOf((*AuthPlugin)(nil)).Elem())
 	if err != nil {
 		return nil, err
@@ -200,7 +197,6 @@ func New(config ApiplexConfig) (*http.ServeMux, error) {
 	}
 
 	// backend plugins
-	log.Debugf("Building backend plugins...")
 	backend, err := buildPlugins(config.Plugins.Backend, reflect.TypeOf((*BackendPlugin)(nil)).Elem())
 	if err != nil {
 		return nil, err
@@ -223,7 +219,6 @@ func New(config ApiplexConfig) (*http.ServeMux, error) {
 	}
 
 	// postauth plugins
-	log.Debugf("Building postauth plugins...")
 	postauth, err := buildPlugins(config.Plugins.PostAuth, reflect.TypeOf((*PostAuthPlugin)(nil)).Elem())
 	if err != nil {
 		return nil, err
@@ -235,7 +230,6 @@ func New(config ApiplexConfig) (*http.ServeMux, error) {
 	}
 
 	// preupstream plugins
-	log.Debugf("Building preupstream plugins...")
 	preupstream, err := buildPlugins(config.Plugins.PreUpstream, reflect.TypeOf((*PreUpstreamPlugin)(nil)).Elem())
 	if err != nil {
 		return nil, err
@@ -247,7 +241,6 @@ func New(config ApiplexConfig) (*http.ServeMux, error) {
 	}
 
 	// postupstream plugins
-	log.Debugf("Building postupstream plugins...")
 	postupstream, err := buildPlugins(config.Plugins.PostUpstream, reflect.TypeOf((*PostUpstreamPlugin)(nil)).Elem())
 	if err != nil {
 		return nil, err
@@ -259,7 +252,6 @@ func New(config ApiplexConfig) (*http.ServeMux, error) {
 	}
 
 	// logging plugins
-	log.Debugf("Building logging plugins...")
 	logging, err := buildPlugins(config.Plugins.Logging, reflect.TypeOf((*LoggingPlugin)(nil)).Elem())
 	if err != nil {
 		return nil, err
@@ -271,20 +263,18 @@ func New(config ApiplexConfig) (*http.ServeMux, error) {
 	}
 
 	// upstreams
-	log.Debugf("Preparing upstream connections...")
-	ap.upstreams = make([]upstream, len(config.Serve.Upstreams))
+	ap.upstreams = make([]APIUpstream, len(config.Serve.Upstreams))
 	for i, us := range config.Serve.Upstreams {
 		u, err := url.Parse(us)
 		if err != nil {
 			return nil, fmt.Errorf("Invalid upstream address: %s", us)
 		}
-		ap.upstreams[i] = upstream{
-			client:  &http.Client{},
-			address: u,
+		ap.upstreams[i] = APIUpstream{
+			Client:  &http.Client{},
+			Address: u,
 		}
 	}
 
-	log.Infof("Connecting to Redis at %s:%d (DB #%d)...", config.Redis.Host, config.Redis.Port, config.Redis.DB)
 	ap.redis = &redis.Pool{
 		MaxIdle:     3,
 		IdleTimeout: 240 * time.Second,
@@ -310,6 +300,15 @@ func New(config ApiplexConfig) (*http.ServeMux, error) {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc(ap.apipath, ap.HandleAPI)
+
+	if config.Serve.PortalAPI != "" {
+		papath := ensureFinalSlash(config.Serve.PortalAPI)
+		portalAPI, err := ap.BuildPortalAPI()
+		if err != nil {
+			return nil, fmt.Errorf("Could not create Portal API. %s", err.Error())
+		}
+		mux.Handle(papath, portalAPI)
+	}
 
 	return mux, nil
 }

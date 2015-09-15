@@ -163,6 +163,8 @@ func (ap *apiplex) HandleAPI(res http.ResponseWriter, req *http.Request) {
 		Data:    make(map[string]interface{}),
 	}
 
+	// TODO determine actual(!) client IP address and add to ctx.Log
+
 	rd := ap.redis.Get()
 
 	if err := ap.authenticateRequest(req, rd, &ctx); err != nil {
@@ -189,15 +191,17 @@ func (ap *apiplex) HandleAPI(res http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	upstream := ap.upstreams[rand.Intn(len(ap.upstreams))]
+	if ctx.Upstream == nil {
+		ctx.Upstream = &ap.upstreams[rand.Intn(len(ap.upstreams))]
+	}
 
 	// prepare request for backend
 	outreq := new(http.Request)
 	*outreq = *req
 
-	outreq.URL.Scheme = upstream.address.Scheme
-	outreq.URL.Host = upstream.address.Host
-	outreq.URL.Path = strings.Replace(outreq.URL.Path, ap.apipath, upstream.address.Path, 1)
+	outreq.URL.Scheme = ctx.Upstream.Address.Scheme
+	outreq.URL.Host = ctx.Upstream.Address.Host
+	outreq.URL.Path = strings.Replace(outreq.URL.Path, ap.apipath, ctx.Upstream.Address.Path, 1)
 	outreq.RequestURI = ""
 	outreq.Close = false
 
@@ -212,7 +216,7 @@ func (ap *apiplex) HandleAPI(res http.ResponseWriter, req *http.Request) {
 		outreq.Header.Set("X-Forwarded-For", clientIP)
 	}
 
-	urs, err := upstream.client.Do(outreq)
+	urs, err := ctx.Upstream.Client.Do(outreq)
 	if err != nil {
 		ap.error(500, err, res)
 		return

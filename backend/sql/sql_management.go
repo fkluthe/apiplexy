@@ -80,21 +80,21 @@ func (sql *SQLDBBackend) GetKey(keyId string, keyType string) (*apiplexy.Key, er
 	return k.toKey(), nil
 }
 
-func (sql *SQLDBBackend) AddUser(email string, password string, user *apiplexy.User) (*apiplexy.User, error) {
+func (sql *SQLDBBackend) AddUser(email string, password string, user *apiplexy.User) error {
 	cu := sqlDBUser{}
 	if !sql.db.Where(&sqlDBUser{Email: email}).First(&cu).RecordNotFound() {
-		return nil, fmt.Errorf("A user with that email already exists.")
+		return fmt.Errorf("A user with that email already exists.")
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if user.Profile == nil {
 		user.Profile = make(map[string]interface{})
 	}
 	bprofile, err := json.Marshal(user.Profile)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	u := sqlDBUser{
@@ -104,9 +104,9 @@ func (sql *SQLDBBackend) AddUser(email string, password string, user *apiplexy.U
 		Profile:  string(bprofile[:]),
 	}
 	if err := sql.db.Create(&u).Error; err != nil {
-		return nil, err
+		return err
 	}
-	return u.toUser(), nil
+	return nil
 }
 
 func (sql *SQLDBBackend) GetUser(email string) *apiplexy.User {
@@ -117,13 +117,13 @@ func (sql *SQLDBBackend) GetUser(email string) *apiplexy.User {
 	return u.toUser()
 }
 
-func (sql *SQLDBBackend) ActivateUser(email string) (*apiplexy.User, error) {
+func (sql *SQLDBBackend) ActivateUser(email string) error {
 	u := sqlDBUser{}
 	if sql.db.Where(&sqlDBUser{Email: email}).First(&u).RecordNotFound() {
-		return nil, fmt.Errorf("User not found.")
+		return fmt.Errorf("User not found.")
 	}
 	sql.db.Model(&u).Where(&sqlDBUser{Email: email}).UpdateColumns(sqlDBUser{Active: true})
-	return u.toUser(), nil
+	return nil
 }
 
 func (sql *SQLDBBackend) ResetPassword(email string, newPassword string) error {
@@ -139,14 +139,14 @@ func (sql *SQLDBBackend) ResetPassword(email string, newPassword string) error {
 	return nil
 }
 
-func (sql *SQLDBBackend) UpdateUser(email string, user *apiplexy.User) (*apiplexy.User, error) {
+func (sql *SQLDBBackend) UpdateUser(email string, user *apiplexy.User) error {
 	u := sqlDBUser{}
 	if sql.db.Where(&sqlDBUser{Email: email}).First(&u).RecordNotFound() {
-		return nil, fmt.Errorf("User not found.")
+		return fmt.Errorf("User not found.")
 	}
 	bp, _ := json.Marshal(user.Profile)
 	sql.db.Model(&u).Where(&sqlDBUser{Email: email}).UpdateColumns(sqlDBUser{Name: user.Name, Profile: string(bp[:])})
-	return u.toUser(), nil
+	return nil
 }
 
 func (sql *SQLDBBackend) Authenticate(email string, password string) *apiplexy.User {
@@ -160,10 +160,10 @@ func (sql *SQLDBBackend) Authenticate(email string, password string) *apiplexy.U
 	return u.toUser()
 }
 
-func (sql *SQLDBBackend) AddKey(email string, key *apiplexy.Key) (*apiplexy.Key, error) {
+func (sql *SQLDBBackend) AddKey(email string, key *apiplexy.Key) error {
 	u := sqlDBUser{}
 	if sql.db.Where(&sqlDBUser{Email: email}).First(&u).RecordNotFound() {
-		return nil, fmt.Errorf("User not found.")
+		return fmt.Errorf("User not found.")
 	}
 	bd, _ := json.Marshal(key.Data)
 	k := sqlDBKey{
@@ -175,7 +175,7 @@ func (sql *SQLDBBackend) AddKey(email string, key *apiplexy.Key) (*apiplexy.Key,
 		User:  email,
 	}
 	sql.db.Create(&k)
-	return k.toKey(), nil
+	return nil
 }
 
 func (sql *SQLDBBackend) DeleteKey(email string, keyID string) error {

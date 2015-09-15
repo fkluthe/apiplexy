@@ -16,7 +16,7 @@ type IPLocatorPlugin struct {
 }
 
 //PostUpstream ..
-func (l *IPLocatorPlugin) PostUpstream(req *http.Request, res *http.Response, ctx *apiplexy.APIContext) error {
+func (l *IPLocatorPlugin) Log(req *http.Request, res *http.Response, ctx *apiplexy.APIContext) error {
 
 	ip, _, _ := net.SplitHostPort(req.RemoteAddr)
 
@@ -65,7 +65,7 @@ func (l *IPLocatorPlugin) Configure(config map[string]interface{}) error {
 }
 
 func init() {
-	// _ = apiplexy.PostUpstreamPlugin(&IPLocatorPlugin{})
+	// _ = apiplexy.LoggingPlugin(&IPLocatorPlugin{})
 	apiplexy.RegisterPlugin(
 		"geolocation",
 		"Resolve IPs to their geographical location (using GeoLite2).",

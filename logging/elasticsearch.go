@@ -15,7 +15,7 @@ type ElasticsearchPlugin struct {
 }
 
 //PostUpstream ..
-func (el *ElasticsearchPlugin) PostUpstream(req *http.Request, res *http.Response, ctx *apiplexy.APIContext) error {
+func (el *ElasticsearchPlugin) Log(req *http.Request, res *http.Response, ctx *apiplexy.APIContext) error {
 	//ctxLog, _ := ctx.(map[string]interface{})
 	logMap := ctx.Log
 	jsonByte, err := json.Marshal(logMap)
@@ -56,7 +56,7 @@ func (el *ElasticsearchPlugin) Configure(config map[string]interface{}) error {
 }
 
 func init() {
-	// _ = apiplexy.PostUpstreamPlugin(&ElasticsearchPlugin{})
+	// _ = apiplexy.LoggingPlugin(&ElasticsearchPlugin{})
 	apiplexy.RegisterPlugin(
 		"elasticsearch",
 		"Log API requests to ElasticSearch.",

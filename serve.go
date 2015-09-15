@@ -247,4 +247,12 @@ func (ap *apiplex) HandleAPI(res http.ResponseWriter, req *http.Request) {
 	urs.Body.Close()
 	res.WriteHeader(urs.StatusCode)
 	res.Write(body)
+
+	for _, logging := range ap.logging {
+		if err := logging.Log(req, urs, &ctx); err != nil {
+			ap.error(500, err, res)
+			return
+		}
+	}
+
 }

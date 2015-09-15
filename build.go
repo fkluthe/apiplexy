@@ -38,6 +38,7 @@ type apiplex struct {
 	postauth      []PostAuthPlugin
 	preupstream   []PreUpstreamPlugin
 	postupstream  []PostUpstreamPlugin
+	logging       []LoggingPlugin
 }
 
 func RegisterPlugin(name, description, link string, plugin interface{}) {
@@ -103,6 +104,8 @@ func ExampleConfiguration(pluginNames []string) (*ApiplexConfig, error) {
 			plugins.PostUpstream = append(plugins.PostUpstream, pconfig)
 		case PostAuthPlugin:
 			plugins.PostAuth = append(plugins.PostAuth, pconfig)
+		case LoggingPlugin:
+			plugins.Logging = append(plugins.Logging, pconfig)
 		}
 	}
 	c.Plugins = plugins
@@ -253,6 +256,18 @@ func New(config ApiplexConfig) (*http.ServeMux, error) {
 	for i, p := range postupstream {
 		cp := p.(PostUpstreamPlugin)
 		ap.postupstream[i] = cp
+	}
+
+	// logging plugins
+	log.Debugf("Building logging plugins...")
+	logging, err := buildPlugins(config.Plugins.Logging, reflect.TypeOf((*LoggingPlugin)(nil)).Elem())
+	if err != nil {
+		return nil, err
+	}
+	ap.logging = make([]LoggingPlugin, len(logging))
+	for i, p := range logging {
+		cp := p.(LoggingPlugin)
+		ap.logging[i] = cp
 	}
 
 	// upstreams

@@ -48,6 +48,7 @@ type apiplexConfigPlugins struct {
 	PostAuth     []apiplexPluginConfig `yaml:",omitempty" json:",omitempty"`
 	PreUpstream  []apiplexPluginConfig `yaml:",omitempty" json:",omitempty"`
 	PostUpstream []apiplexPluginConfig `yaml:",omitempty" json:",omitempty"`
+	Logging      []apiplexPluginConfig `yaml:",omitempty" json:",omitempty"`
 }
 
 type apiplexQuota struct {
@@ -163,4 +164,9 @@ type PreUpstreamPlugin interface {
 type PostUpstreamPlugin interface {
 	ApiplexPlugin
 	PostUpstream(req *http.Request, res *http.Response, ctx *APIContext) error
+}
+
+type LoggingPlugin interface {
+	ApiplexPlugin
+	Log(req *http.Request, res *http.Response, ctx *APIContext) error
 }

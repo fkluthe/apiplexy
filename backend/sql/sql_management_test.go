@@ -43,7 +43,7 @@ func TestAddUser(t *testing.T) {
 	}
 	initialPassword := "my-initial-password"
 
-	_, err := plugin.AddUser(testuser.Email, initialPassword, &testuser)
+	err := plugin.AddUser(testuser.Email, initialPassword, &testuser)
 
 	Convey("Adding a new user should not give an error", t, func() {
 		So(err, ShouldBeNil)
@@ -56,7 +56,7 @@ func TestAddUser(t *testing.T) {
 	})
 
 	Convey("Trying to add the same user twice should result in an error", t, func() {
-		_, err = plugin.AddUser(testuser.Email, initialPassword, &testuser)
+		err = plugin.AddUser(testuser.Email, initialPassword, &testuser)
 		So(err, ShouldNotBeNil)
 	})
 }
@@ -71,7 +71,8 @@ func TestActivateUser(t *testing.T) {
 		u := plugin.GetUser("test@user.com")
 		So(u, ShouldNotBeNil)
 		So(u.Active, ShouldBeFalse)
-		u, err := plugin.ActivateUser("test@user.com")
+		err := plugin.ActivateUser("test@user.com")
+		u = plugin.GetUser("test@user.com")
 		So(err, ShouldBeNil)
 		So(u.Active, ShouldBeTrue)
 	})
@@ -102,7 +103,7 @@ func TestUpdateUser(t *testing.T) {
 	Convey("Adding a field to user profile should work", t, func() {
 		u := plugin.GetUser("test@user.com")
 		u.Profile["pet"] = "dog"
-		_, err := plugin.UpdateUser("test@user.com", u)
+		err := plugin.UpdateUser("test@user.com", u)
 		So(err, ShouldBeNil)
 	})
 
@@ -119,7 +120,7 @@ func TestKeyManagement(t *testing.T) {
 	}
 
 	Convey("Adding a key to a nonexistant user should not work", t, func() {
-		_, err := plugin.AddKey("not-there@user.com", &key)
+		err := plugin.AddKey("not-there@user.com", &key)
 		So(err, ShouldNotBeNil)
 	})
 
@@ -130,7 +131,7 @@ func TestKeyManagement(t *testing.T) {
 	})
 
 	Convey("Adding a key to an existing user should work", t, func() {
-		_, err := plugin.AddKey("test@user.com", &key)
+		err := plugin.AddKey("test@user.com", &key)
 		So(err, ShouldBeNil)
 	})
 

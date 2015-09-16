@@ -165,7 +165,11 @@ func ensureFinalSlash(s string) string {
 	}
 }
 
-func New(config ApiplexConfig) (*http.ServeMux, error) {
+func buildApiplex(config ApiplexConfig) (*apiplex, error) {
+	if config.Serve.API == "" {
+		config.Serve.API = "/"
+	}
+
 	// TODO make everything configurable
 	ap := apiplex{
 		apipath:       ensureFinalSlash(config.Serve.API),
@@ -298,12 +302,21 @@ func New(config ApiplexConfig) (*http.ServeMux, error) {
 		log.Fatalf("Couldn't connect to Redis. %s", err.Error())
 	}
 
+	return &ap, nil
+}
+
+func New(config ApiplexConfig) (*http.ServeMux, error) {
+	ap, err := buildApiplex(config)
+	if err != nil {
+		return nil, err
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc(ap.apipath, ap.HandleAPI)
 
 	if config.Serve.PortalAPI != "" {
 		papath := ensureFinalSlash(config.Serve.PortalAPI)
-		portalAPI, err := ap.BuildPortalAPI()
+		portalAPI, err := ap.BuildPortalAPI(config.Serve.PortalAPI)
 		if err != nil {
 			return nil, fmt.Errorf("Could not create Portal API. %s", err.Error())
 		}

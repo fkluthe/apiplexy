@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/dgrijalva/jwt-go"
+	"github.com/garyburd/redigo/redis"
 	"github.com/gorilla/mux"
 	"net/http"
 	"time"
@@ -15,6 +16,11 @@ type portalAPI struct {
 	signingKey string
 	keytypes   map[string]KeyType
 	keyplugins map[string]AuthPlugin
+}
+
+type activationData struct {
+	Email string `json:"email"`
+	After string `json:"after"`
 }
 
 func abort(res http.ResponseWriter, code int, message string, args ...interface{}) {
@@ -57,6 +63,37 @@ func (p *portalAPI) createUser(res http.ResponseWriter, req *http.Request) {
 	finish(res, &u)
 }
 
+func (p *portalAPI) activateUser(res http.ResponseWriter, req *http.Request) {
+	vars := mux.Vars(req)
+	activationKey := vars["key"]
+	r := p.a.redis.Get()
+	actJson, err := redis.Bytes(r.Do("GET", "activation:"+activationKey))
+	if err != nil {
+		if err == redis.ErrNil {
+			abort(res, 403, "Invalid or expired activation code.")
+			return
+		} else {
+			abort(res, 500, err.Error())
+		}
+	}
+	act := activationData{}
+	json.Unmarshal(actJson, &act)
+	if act.Email == "" {
+		abort(res, 500, "Invalid activation data.")
+		return
+	}
+	if p.m.ActivateUser(act.Email) != nil {
+		abort(res, 500, "Could not activate account: %s", err.Error())
+		return
+	}
+	if act.After != "" {
+		http.Redirect(res, req, act.After, 302)
+	} else {
+		res.WriteHeader(http.StatusOK)
+		res.Write([]byte("Activation successful. Please return to the login page and log in."))
+	}
+}
+
 func (p *portalAPI) getToken(res http.ResponseWriter, req *http.Request) {
 	decoder := json.NewDecoder(req.Body)
 	login := struct {
@@ -87,7 +124,31 @@ func (p *portalAPI) getToken(res http.ResponseWriter, req *http.Request) {
 }
 
 func (p *portalAPI) updateProfile(email string, res http.ResponseWriter, req *http.Request) {
-	// TODO
+	decoder := json.NewDecoder(req.Body)
+	r := struct {
+		Name    string
+		Profile map[string]interface{}
+	}{}
+	if decoder.Decode(&r) != nil {
+		abort(res, 400, "Supply a new name, a new profile, or both.")
+		return
+	}
+	u := p.m.GetUser(email)
+	if u == nil {
+		abort(res, 404, "Your user was not found. Please log in again.")
+		return
+	}
+	if r.Name != "" {
+		u.Name = r.Name
+	}
+	if len(r.Profile) > 0 {
+		u.Profile = r.Profile
+	}
+	if err := p.m.UpdateUser(email, u); err != nil {
+		abort(res, 500, "Couldn't update user profile: %s", err.Error())
+		return
+	}
+	finish(res, u)
 }
 
 func (p *portalAPI) getKeyTypes(email string, res http.ResponseWriter, req *http.Request) {
@@ -171,7 +232,7 @@ func (p *portalAPI) auth(inner func(string, http.ResponseWriter, *http.Request))
 	}
 }
 
-func (ap *apiplex) BuildPortalAPI() (*mux.Router, error) {
+func (ap *apiplex) buildPortalAPI() (*portalAPI, error) {
 	if ap.usermgmt == nil {
 		return nil, fmt.Errorf("Cannot create portal API. There is no backend plugin that supports full user management.")
 	}
@@ -185,11 +246,21 @@ func (ap *apiplex) BuildPortalAPI() (*mux.Router, error) {
 		}
 	}
 
-	p := portalAPI{m: ap.usermgmt, a: ap, keytypes: availKeytypes, keyplugins: keyPlugins}
-	r := mux.NewRouter()
+	return &portalAPI{m: ap.usermgmt, a: ap, keytypes: availKeytypes, keyplugins: keyPlugins}, nil
+}
+
+func (ap *apiplex) BuildPortalAPI(prefix string) (*mux.Router, error) {
+	p, err := ap.buildPortalAPI()
+	if err != nil {
+		return nil, err
+	}
+
+	r := mux.NewRouter().PathPrefix(prefix).Subrouter()
 
 	r.HandleFunc("/account", p.createUser).Methods("POST").Headers("Content-Type", "application/json")
+	r.HandleFunc("/account/activate/{key}", p.activateUser)
 	r.HandleFunc("/account/token", p.getToken).Methods("POST").Headers("Content-Type", "application/json")
+	r.HandleFunc("/account/update", p.auth(p.updateProfile)).Methods("POST").Headers("Content-Type", "application/json")
 	r.HandleFunc("/keys/types", p.auth(p.getKeyTypes))
 	r.HandleFunc("/keys", p.auth(p.getAllKeys)).Methods("GET")
 	r.HandleFunc("/keys", p.auth(p.createKey)).Methods("POST").Headers("Content-Type", "application/json")

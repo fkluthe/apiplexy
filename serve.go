@@ -252,11 +252,14 @@ func (ap *apiplex) HandleAPI(res http.ResponseWriter, req *http.Request) {
 	res.WriteHeader(urs.StatusCode)
 	res.Write(body)
 
-	for _, logging := range ap.logging {
-		if err := logging.Log(req, urs, &ctx); err != nil {
-			ap.error(500, err, res)
-			return
+	// do logging in a goroutine so the request can finish as fast as possible
+	go func() {
+		for _, logging := range ap.logging {
+			if err := logging.Log(req, urs, &ctx); err != nil {
+				ap.error(500, err, res)
+				return
+			}
 		}
-	}
+	}()
 
 }

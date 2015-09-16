@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/12foo/apiplexy"
+	_ "github.com/12foo/apiplexy/auth/hmac"
 	_ "github.com/12foo/apiplexy/backend/sql"
 	"github.com/garyburd/redigo/redis"
 	. "github.com/smartystreets/goconvey/convey"
@@ -39,6 +40,8 @@ serve:
   portal_api: /portal/api/
   signing_key: test-signing-key
 plugins:
+  auth:
+  - plugin: hmac
   backend:
   - plugin: sql-full
     config:
@@ -181,12 +184,52 @@ func TestPortalAPI(t *testing.T) {
 		token = ts.Token
 	})
 
+	var ktype string
+
 	Convey("Valid user can access protected paths", t, func() {
 		req, _ := http.NewRequest("GET", "/portal/api/keys/types", nil)
 		req.Header.Set("Authorization", "Bearer "+token)
 		res := httptest.NewRecorder()
 		ap.ServeHTTP(res, req)
 		So(res, shouldHaveStatus, 200)
+		var types map[string]apiplexy.KeyType
+		json.Unmarshal(res.Body.Bytes(), &types)
+		So(types, ShouldContainKey, "HMAC")
+		ktype = "HMAC"
+	})
+
+	Convey("User should have 0 keys", t, func() {
+		req, _ := http.NewRequest("GET", "/portal/api/keys", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		res := httptest.NewRecorder()
+		ap.ServeHTTP(res, req)
+		So(res, shouldHaveStatus, 200)
+		var keys []apiplexy.Key
+		json.Unmarshal(res.Body.Bytes(), &keys)
+		So(keys, ShouldBeEmpty)
+	})
+
+	Convey("Create a key", t, func() {
+		req, _ := http.NewRequest("POST", "/portal/api/keys", toBody(map[string]interface{}{
+			"type":  ktype,
+			"realm": "test-realm",
+		}))
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Content-Type", "application/json")
+		res := httptest.NewRecorder()
+		ap.ServeHTTP(res, req)
+		So(res, shouldHaveStatus, 200)
+	})
+
+	Convey("User should have 1 key", t, func() {
+		req, _ := http.NewRequest("GET", "/portal/api/keys", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		res := httptest.NewRecorder()
+		ap.ServeHTTP(res, req)
+		So(res, shouldHaveStatus, 200)
+		var keys []apiplexy.Key
+		json.Unmarshal(res.Body.Bytes(), &keys)
+		So(len(keys), ShouldEqual, 1)
 	})
 
 }

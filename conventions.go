@@ -35,11 +35,12 @@ type apiplexConfigRedis struct {
 	DB   int
 }
 type apiplexConfigServe struct {
-	Port      int
-	API       string
-	Upstreams []string
-	PortalAPI string `yaml:"portal_api"`
-	Portal    string `yaml:"portal"`
+	Port       int
+	API        string
+	Upstreams  []string
+	PortalAPI  string `yaml:"portal_api"`
+	Portal     string `yaml:"portal"`
+	SigningKey string `yaml:"signing_key"`
 }
 
 type apiplexConfigPlugins struct {

@@ -3,6 +3,7 @@ package apiplexy
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/dchest/uniuri"
 	"github.com/dgrijalva/jwt-go"
 	"github.com/garyburd/redigo/redis"
 	"github.com/gorilla/mux"
@@ -11,9 +12,9 @@ import (
 )
 
 type portalAPI struct {
+	signingKey []byte
 	m          ManagementBackendPlugin
 	a          *apiplex
-	signingKey string
 	keytypes   map[string]KeyType
 	keyplugins map[string]AuthPlugin
 }
@@ -46,6 +47,7 @@ func (p *portalAPI) createUser(res http.ResponseWriter, req *http.Request) {
 		Name     string
 		Password string
 		Profile  map[string]interface{}
+		After    string
 	}{}
 	if decoder.Decode(&n) != nil || n.Email == "" || n.Password == "" || n.Name == "" {
 		abort(res, 400, "Request a new account by supplying your email, name and password.")
@@ -58,6 +60,11 @@ func (p *portalAPI) createUser(res http.ResponseWriter, req *http.Request) {
 		return
 	}
 	if !u.Active {
+		code := uniuri.NewLen(48)
+		act := activationData{Email: n.Email, After: n.After}
+		r := p.a.redis.Get()
+		jsonAct, _ := json.Marshal(&act)
+		r.Do("SETEX", "activation:"+code, (24 * time.Hour).Seconds(), jsonAct)
 		// TODO send activation code email
 	}
 	finish(res, &u)
@@ -86,6 +93,7 @@ func (p *portalAPI) activateUser(res http.ResponseWriter, req *http.Request) {
 		abort(res, 500, "Could not activate account: %s", err.Error())
 		return
 	}
+	r.Do("DELETE", "activation:"+activationKey)
 	if act.After != "" {
 		http.Redirect(res, req, act.After, 302)
 	} else {
@@ -246,7 +254,13 @@ func (ap *apiplex) buildPortalAPI() (*portalAPI, error) {
 		}
 	}
 
-	return &portalAPI{m: ap.usermgmt, a: ap, keytypes: availKeytypes, keyplugins: keyPlugins}, nil
+	return &portalAPI{
+		signingKey: []byte(ap.signingKey),
+		m:          ap.usermgmt,
+		a:          ap,
+		keytypes:   availKeytypes,
+		keyplugins: keyPlugins,
+	}, nil
 }
 
 func (ap *apiplex) BuildPortalAPI(prefix string) (*mux.Router, error) {

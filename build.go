@@ -2,6 +2,7 @@ package apiplexy
 
 import (
 	"fmt"
+	"github.com/dchest/uniuri"
 	"github.com/garyburd/redigo/redis"
 	"log"
 	"net/http"
@@ -26,6 +27,7 @@ type APIUpstream struct {
 }
 
 type apiplex struct {
+	signingKey    string
 	upstreams     []APIUpstream
 	apipath       string
 	authCacheMins int
@@ -73,11 +75,12 @@ func ExampleConfiguration(pluginNames []string) (*ApiplexConfig, error) {
 			},
 		},
 		Serve: apiplexConfigServe{
-			Port:      5000,
-			API:       "/",
-			Upstreams: []string{"http://your-actual-api:8000/"},
-			PortalAPI: "/portal/api/",
-			Portal:    "/portal/",
+			Port:       5000,
+			API:        "/",
+			Upstreams:  []string{"http://your-actual-api:8000/"},
+			PortalAPI:  "/portal/api/",
+			Portal:     "/portal/",
+			SigningKey: uniuri.NewLen(64),
 		},
 	}
 	plugins := apiplexConfigPlugins{}
@@ -170,10 +173,15 @@ func buildApiplex(config ApiplexConfig) (*apiplex, error) {
 		config.Serve.API = "/"
 	}
 
+	if config.Serve.SigningKey == "" {
+		config.Serve.SigningKey = uniuri.NewLen(64)
+	}
+
 	// TODO make everything configurable
 	ap := apiplex{
 		apipath:       ensureFinalSlash(config.Serve.API),
 		authCacheMins: 10,
+		signingKey:    config.Serve.SigningKey,
 	}
 
 	if _, ok := config.Quotas["default"]; !ok {

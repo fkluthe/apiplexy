@@ -20,10 +20,12 @@ func (e AbortRequest) Error() string {
 	return e.Message
 }
 
+// Abort is a utility function to quickly whip up an AbortRequest.
 func Abort(status int, message string) AbortRequest {
 	return AbortRequest{Status: status, Message: message}
 }
 
+// various structs used for config parsing; not really helpful to have public
 type apiplexPluginConfig struct {
 	Plugin string
 	Config map[string]interface{} `yaml:",omitempty" json:",omitempty"`
@@ -65,16 +67,23 @@ type ApiplexConfig struct {
 	Plugins apiplexConfigPlugins
 }
 
+// User represents a user (or developer) who can create and use keys in their
+// app. Users are uniquely identified by their emails, and that's really all
+// the management plugins need. You are free to put additional profile data
+// into the Data field, as long as it can be serialized to JSON.
 type User struct {
 	Email   string                 `json:"email"`
 	Name    string                 `json:"name"`
-	Admin   bool                   `json:"-"`
 	Active  bool                   `json:"-"`
 	Profile map[string]interface{} `json:"profile,omitempty"`
 }
 
 // A Key has a unique ID, a user-defined Type (like "HMAC"), an assigned Quota
 // and can have extra data (such as secret signing keys) attached for validation.
+//
+// The key's Realm is either an app identifier (for native apps) or a web domain.
+// If apiplexy receives a request with a Referrer header set (meaning it came from
+// a web app), it will check the webapp's Referrer domain against the key's Realm.
 type Key struct {
 	ID    string                 `json:"id"`
 	Realm string                 `json:"realm"`
@@ -85,6 +94,10 @@ type Key struct {
 
 // An APIContext map accompanies every API request through its lifecycle. Use this
 // to store data that will be available to plugins down the chain.
+//
+// As a convention, Logging plugins MUST log everything stored under Log. Log MUST
+// at least(!) be kept JSON-serializable; or better yet, as a map from strings to
+// plain types.
 type APIContext struct {
 	Keyless  bool
 	Key      *Key
@@ -101,6 +114,21 @@ type KeyType struct {
 	Description string `json:"description"`
 }
 
+// A basic ApiplexPlugin is always initialized as a zero value. The builder
+// then calls Configure, supplying user configuration.
+//
+// Configure is passed a configuration that has been supplied by the user. At
+// the end of Configure, your plugin should be fully ready to run. Returning
+// an error will abort apiplexy's startup completely with the error message.
+//
+// DefaultConfig should return a default configuration map for your plugin.
+// This does not need to be a configuration that works imemdiately, but your
+// plugin's Configure methos must take these defaults without panicking, and
+// return sensible error messages.
+//
+// The builder ensures that before any configuration is passed to your
+// Configure method, it has all the keys in your DefaultConfig, with their
+// values type-matching the default values.
 type ApiplexPlugin interface {
 	Configure(config map[string]interface{}) error
 	DefaultConfig() map[string]interface{}
@@ -129,11 +157,32 @@ type AuthPlugin interface {
 	Validate(key *Key, req *http.Request, ctx *APIContext, authCtx map[string]interface{}) (isValid bool, err error)
 }
 
+// A basic BackendPlugin can retrieve valid keys from some sort of key store.
+// It can not delete or manage these keys, and is used exclusively in request
+// authentication.
 type BackendPlugin interface {
 	ApiplexPlugin
 	GetKey(keyID string, keyType string) (*Key, error)
 }
 
+// A ManagementBackendPlugin supports full user and key management inside
+// some kind of backing store. If you configure one of these, the portal API
+// can use it to build an instant developer self-service portal.
+//
+// Most of these functions should be fairly self-explanatory. Some extra hints:
+//
+// AddUser gets passed a preliminary user struct reference. It MUST overwrite
+// the *User's email and password with the values passed as arguments before
+// saving the new user to your backend store.
+//
+// Normally, the portal API configuration decides whether a user needs email
+// verification before the account is activated (by passing in the preliminary user
+// with the user.Active bit set accordingly). It's best to leave this alone.
+// However, your backend plugin MAY override this part by setting user.Active
+// before storing/returning the saved user. If user.Active is false on the returned
+// user, the portal API will automatically perform email verification.
+//
+// UpdateUser MUST NOT overwrite the user's email or password.
 type ManagementBackendPlugin interface {
 	BackendPlugin
 	AddUser(email string, password string, user *User) error
@@ -152,22 +201,35 @@ type ManagementBackendPlugin interface {
 // access or modify cost based on things like the request's path. apiplexy checks
 // the context's "cost" entry during quota calculations.
 //
-//  ctx["cost"] = 3
+//  ctx.Cost = 3
 type PostAuthPlugin interface {
 	ApiplexPlugin
 	PostAuth(req *http.Request, ctx *APIContext) error
 }
 
+// A PreUpstreamPlugin runs after the quota has been checked and applied, but before
+// the request is going ahead to upstream. As the user has already "paid" quota at this
+// point, it's important that you avoid aborting the request unless there's a critical
+// reason. Prefer a PostAuthPlugin for likely aborts.
 type PreUpstreamPlugin interface {
 	ApiplexPlugin
 	PreUpstream(req *http.Request, ctx *APIContext) error
 }
 
+// A PostUpstreamPlugin runs after the request has been handled by upstream, and
+// receives an additional "res" parameter. This is the response returned by upstream.
+// You can modify the response body here.
 type PostUpstreamPlugin interface {
 	ApiplexPlugin
 	PostUpstream(req *http.Request, res *http.Response, ctx *APIContext) error
 }
 
+// LoggingPlugins are run after the main request has already completed and the response
+// has been sent back to the user. Modifying the response will have no effect. This
+// stage is (as the name implies) best suited for logging plugins.
+//
+// As a convention, logging plugins MUST log/store all entries in the ctx.Log map. This
+// map is, also by convention, always JSON-serializable.
 type LoggingPlugin interface {
 	ApiplexPlugin
 	Log(req *http.Request, res *http.Response, ctx *APIContext) error

@@ -29,6 +29,9 @@ type processingError struct {
 	Error string `json:"error"`
 }
 
+// Shortcut function to end requests prematurely. If called with an AbortRequest, will end request
+// nicely with an error message to the user. If called with any other error type, will throw a 500
+// and report the error through reporting.
 func (ap *apiplex) error(status int, err error, res http.ResponseWriter) {
 	switch err.(type) {
 	case AbortRequest:
@@ -44,6 +47,18 @@ func (ap *apiplex) error(status int, err error, res http.ResponseWriter) {
 	}
 }
 
+// Authenticate a request: first, tries all AuthPlugins in order. The first one that Detect()s
+// an auth scheme in the request extracts the identifying ID and other bits of an auth key.
+// These are then tried in the backends until one responds back with the corresponding full key
+// e.g. from a database. The full key is then passed back once more to the original AuthPlugin
+// for final cryptographic validation.
+//
+// Authenticated keys are cached for some time and only need to perform the validation step
+// on subsequent requests.
+//
+// If no key is detected in the request and keyless mode is enabled in the config (i.e. a "keyless"
+// quota is present), the request is marked as keyless and allowed to proceed against the
+// "keyless" quota.
 func (ap *apiplex) authenticateRequest(req *http.Request, rd redis.Conn, ctx *APIContext) error {
 	found := false
 	for _, auth := range ap.auth {
@@ -154,6 +169,11 @@ func (ap *apiplex) checkQuota(rd redis.Conn, req *http.Request, ctx *APIContext)
 	return nil
 }
 
+// HandleAPI is the main processing function. It receives a request, checks for authentication,
+// calculates quota, runs plugins and then passes the request to an upstream backend. On the
+// returned response, it again runs plugins, and then sends the (possibly modified) result
+// back to the user. After the request is thus handled, logging plugins are run in a background
+// goroutine.
 func (ap *apiplex) HandleAPI(res http.ResponseWriter, req *http.Request) {
 	ctx := APIContext{
 		Keyless: false,

@@ -43,6 +43,13 @@ type apiplex struct {
 	logging       []LoggingPlugin
 }
 
+// RegisterPlugin makes your plugin available to apiplexy. You should probably
+// call this from the init() function of your plugin file, so your plugin
+// works as a silent import. Name is the plugin's unique name (lowercase).
+// Description is a one-sentence description of what your plugin does. The
+// link should lead to a documentation webpage about your plugin (or your
+// github repo with a README). For the plugin parameter, pass a zero-value
+// instance of your plugin struct, i.e. YourPlugin{}.
 func RegisterPlugin(name, description, link string, plugin interface{}) {
 	registeredPlugins[name] = apiplexPluginInfo{
 		Name:        name,
@@ -52,10 +59,15 @@ func RegisterPlugin(name, description, link string, plugin interface{}) {
 	}
 }
 
+// AvailablePlugins gets a map of currently registered plugins.
 func AvailablePlugins() map[string]apiplexPluginInfo {
 	return registeredPlugins
 }
 
+// ExampleConfiguration generates an ApiplexConfig struct with example values
+// and the specified plugins inserted with their default configurations at
+// their appropriate places in the plugin tree. This is a good starting point
+// to give to the user for customization.
 func ExampleConfiguration(pluginNames []string) (*ApiplexConfig, error) {
 	c := ApiplexConfig{
 		Redis: apiplexConfigRedis{
@@ -133,6 +145,9 @@ func ensureDefaults(target map[string]interface{}, defaults map[string]interface
 	return nil
 }
 
+// A little black magic here: buildPlugins uses reflection to reify and configure
+// actual working plugins from zero-value references. The plugins are also reflect-
+// typechecked so we don't run into nasty surprises later.
 func buildPlugins(plugins []apiplexPluginConfig, lifecyclePluginType reflect.Type) ([]interface{}, error) {
 	built := make([]interface{}, len(plugins))
 	for i, config := range plugins {
@@ -160,6 +175,8 @@ func buildPlugins(plugins []apiplexPluginConfig, lifecyclePluginType reflect.Typ
 	return built, nil
 }
 
+// Helper method so all HTTP paths in the configuration have a final slash
+// (less uncertainty about path matching).
 func ensureFinalSlash(s string) string {
 	if s[len(s)-1] != '/' {
 		return s + "/"
@@ -168,6 +185,8 @@ func ensureFinalSlash(s string) string {
 	}
 }
 
+// constructs an Apiplex, i.e. an apiplexy struct that can run plugins on
+// requests and proxy them back to one or more upstream backends.
 func buildApiplex(config ApiplexConfig) (*apiplex, error) {
 	if config.Serve.API == "" {
 		config.Serve.API = "/"
@@ -219,7 +238,9 @@ func buildApiplex(config ApiplexConfig) (*apiplex, error) {
 		ap.backends[i] = cp
 	}
 
-	// find mgmt backend plugin
+	// The first ManagementBackendPlugin (i.e. one with additional user/key management) gets special
+	// treatment: if the portal API is enabled, it will connect directly to this plugin and use that
+	// to perform portal actions.
 	for _, plugin := range ap.backends {
 		// must use reflection here since type switch will see ap.backends as implementing
 		// BackendPlugin only

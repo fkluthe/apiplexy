@@ -1,6 +1,6 @@
 package main
 
-// Import apiplexy plugins in a separate block (just because it looks nicer).
+// Import apiplexy plugins in a separate block (just because it looks nicer). TEST
 import (
 	_ "github.com/12foo/apiplexy/auth/hmac"
 	_ "github.com/12foo/apiplexy/backend/sql"
